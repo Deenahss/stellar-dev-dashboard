@@ -270,13 +270,6 @@ The API service includes automated canary deployment health probes and auto-abor
 - **Error Budget Auto-Abort**: Automatically halts rollouts and executes rollback commands when error budget (default: 5%) or p95 latency thresholds (default: 2000ms) are breached.
 - **Full Guide**: See [docs/CANARY_DEPLOYMENT.md](docs/CANARY_DEPLOYMENT.md) for full architecture, CLI flags, Docker Compose setup, and deployment workflow details.
 
-## Accessibility & WCAG 2.2 AA Conformance
-
-The primary developer workflows (**Account**, **Transactions**, and **Contracts**) conform to **WCAG 2.2 Level AA**:
-- **Focus Not Obscured (SC 2.4.11)**: Dedicated scroll margins on focused elements prevent toolbar/header occlusion.
-- **Target Size Minimum (SC 2.5.8)**: All interactive buttons, tabs, and form controls meet or exceed 24x24 CSS pixels.
-- **Accessible Authentication (SC 3.3.8)**: Secret keys and credential inputs strictly support clipboard pasting and autocomplete.
-- **Error Identification & Association (SC 3.3.1 / SC 3.3.2)**: Dynamic live regions and explicit `aria-describedby` links guide screen reader users through validation errors.
-- **Offline & RPC Failure Handling**: Graceful fallback and live status banners when disconnected from the network.
-- **Full Guide**: See [docs/WCAG_22_AA_GUIDE.md](docs/WCAG_22_AA_GUIDE.md) and [docs/KEYBOARD_NAVIGATION.md](docs/KEYBOARD_NAVIGATION.md).
-
+### SEP-38 Integration
+- **Quotes**: Added support for SEP-38 Quotes API. Now discovers ANCHOR_QUOTE_SERVER and can retrieve /info, /prices, /price and request authenticated /quote.
+- **Security**: Authentication leverages SEP-10 tokens for quotes. Be aware that tokens can expire, and quotes have an expiration window handled gracefully with a countdown timer.
