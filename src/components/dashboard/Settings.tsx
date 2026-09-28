@@ -9,6 +9,14 @@ import { ALERT_RULE_TYPE, ALERT_CHANNEL } from "../../lib/alerts";
 import PluginRegistryView from "./PluginRegistryView";
 import DataExport from "./DataExport";
 import LanguageSettings from "./LanguageSettings";
+import LayoutExportImport from "./LayoutExportImport";
+import {
+  getEffectiveActiveLayout,
+  applyLayout,
+  generateLayoutId,
+  type DashboardLayout,
+  type LayoutHistoryEntry,
+} from "../../lib/dashboardLayouts";
 import { revokeSentryConsent } from "../../utils/monitoring";
 
 const SESSION_API_KEY = 'stellar_custom_api_key';
@@ -165,6 +173,38 @@ export default function Settings() {
   const [installOutcome, setInstallOutcome] = useState<string | null>(null);
   const [updateReady, setUpdateReady] = useState(false);
   const [offline, setOffline] = useState(false);
+  const [layoutModalTab, setLayoutModalTab] = useState<"export" | "import" | null>(null);
+  const [activeLayout, setActiveLayout] = useState<DashboardLayout | null>(null);
+  const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
+
+  /** Load the layout the user is currently looking at, so Export has something to export. */
+  const openLayoutModal = useCallback(async (tab: "export" | "import") => {
+    setLayoutNotice(null);
+    setActiveLayout(await getEffectiveActiveLayout());
+    setLayoutModalTab(tab);
+  }, []);
+
+  /** Apply an imported layout: snapshot current, save, and make it active. */
+  const handleLayoutImport = useCallback(async (layout: DashboardLayout) => {
+    await applyLayout(layout, { snapshotPrevious: true, reason: "before-import" });
+    setActiveLayout(await getEffectiveActiveLayout());
+    setLayoutNotice(`Imported "${layout.name}" — it is now your active dashboard layout.`);
+    setLayoutModalTab(null);
+  }, []);
+
+  const handleLayoutHistoryRestore = useCallback(async (entry: LayoutHistoryEntry) => {
+    const restored: DashboardLayout = {
+      id: generateLayoutId(),
+      name: `${entry.layoutName} (Restored)`,
+      widgets: entry.widgets,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await applyLayout(restored, { snapshotPrevious: true, reason: "before-import" });
+    setActiveLayout(await getEffectiveActiveLayout());
+    setLayoutNotice(`Restored "${entry.layoutName}" from history.`);
+    setLayoutModalTab(null);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -453,6 +493,82 @@ export default function Settings() {
         </div>
         <DataExport />
       </div>
+
+      {/* Dashboard Layout Export / Import */}
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: "var(--radius-lg)", padding: "14px", display: "flex", flexDirection: "column", gap: "10px", marginTop: "1rem" }}>
+        <FieldLabel>Dashboard Layout</FieldLabel>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+          Export your current dashboard layout as JSON, share it via URL, or import a layout shared by someone else.
+          History snapshots let you restore previous configurations.
+        </div>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <button
+            id="settings-export-layout-btn"
+            onClick={() => openLayoutModal("export")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "8px 14px",
+              background: "var(--cyan)",
+              color: "white",
+              border: "none",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            ⬇ Export Layout
+          </button>
+          <button
+            id="settings-import-layout-btn"
+            onClick={() => openLayoutModal("import")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              padding: "8px 14px",
+              background: "var(--bg-elevated)",
+              color: "var(--text-primary)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "12px",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            ⬆ Import Layout
+          </button>
+        </div>
+        {layoutNotice && (
+          <div style={{
+            fontSize: "11px",
+            color: "var(--text-secondary)",
+            padding: "8px 10px",
+            background: "rgba(34, 197, 94, 0.1)",
+            border: "1px solid var(--green)",
+            borderRadius: "var(--radius-sm)",
+          }}>
+            {layoutNotice}
+          </div>
+        )}
+        <p style={{ fontSize: "11px", color: "var(--text-muted)", margin: 0 }}>
+          Exports use a versioned JSON schema, so layouts stay importable across future updates.
+        </p>
+      </div>
+
+      {layoutModalTab && (
+        <LayoutExportImport
+          isOpen
+          layout={activeLayout}
+          initialTab={layoutModalTab}
+          onImport={handleLayoutImport}
+          onHistoryRestore={handleLayoutHistoryRestore}
+          onClose={() => setLayoutModalTab(null)}
+        />
+      )}
+
     </div>
   );
 }
