@@ -12,7 +12,7 @@ import { usePreferences } from "../../hooks/usePreferences";
 import { getContractInteractions } from "../../lib/storage";
 import { Sparkles, AlertTriangle, AlertCircle, HelpCircle } from "lucide-react";
 import GasCostEstimator from "./GasCostEstimator";
-import FootprintDiffViewer from "./FootprintDiffViewer";
+import ResourceMetrics from "./ResourceMetrics";
 import MainnetReviewModal from "../security/MainnetReviewModal";
 
 const ARGUMENT_TYPES = [
@@ -999,9 +999,11 @@ export default function ContractInteraction() {
             data={simulationResult.result}
           />
           <ContractEventDisplay events={simulationResult.events} label="Simulation Events" />
-          <FootprintDiffViewer
-            previousFootprint={previousFootprint}
-            currentFootprint={simulationResult.footprint}
+          <ResourceMetrics
+            cost={simulationResult.cost}
+            footprint={simulationResult.footprint}
+            network={network}
+            inclusionFee={100} // Basic minimum inclusion fee
           />
         </div>
       )}
