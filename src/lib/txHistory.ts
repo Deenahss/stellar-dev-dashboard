@@ -12,6 +12,7 @@ type TxSnapshot = {
   baseFee: string;
   timeout: string;
   operations: any[];
+  [key: string]: any;
 };
 
 type Draft = {
@@ -25,40 +26,22 @@ type Draft = {
   reservedAt: number | null;
 };
 
-const DRAFT_KEY = "tx_builder_drafts_v1";
-const MAX_DRAFTS = 20;
 const MAX_HISTORY = 50;
 
 function clone<T>(v: T): T {
   return JSON.parse(JSON.stringify(v));
 }
 
-function loadDraftsFromStorage(): Draft[] {
-  try {
-    const raw = window.localStorage.getItem(DRAFT_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-function saveDraftsToStorage(drafts: Draft[]) {
-  try {
-    window.localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts));
-  } catch {}
-}
-
 export function useTransactionHistory(opts: {
   initialSnapshot: TxSnapshot;
-  onRestore: (snapshot: TxSnapshot) => void;
+  onRestore: (_snapshot: TxSnapshot) => void;
 }) {
   const undoStack: TxSnapshot[] = [];
   const redoStack: TxSnapshot[] = [];
   let current: TxSnapshot = clone(opts.initialSnapshot);
   let isApplying = false;
 
-  let drafts = loadDraftsFromStorage();
+  let drafts = listOfflineDrafts();
 
   function canUndo() {
     return undoStack.length > 0;
@@ -77,7 +60,9 @@ export function useTransactionHistory(opts: {
     // avoid recording identical successive snapshots
     try {
       if (JSON.stringify(current) === JSON.stringify(snapshot)) return;
-    } catch {}
+    } catch {
+      /* ignore */
+    }
 
     undoStack.push(clone(current));
     if (undoStack.length > MAX_HISTORY) undoStack.shift();
@@ -90,7 +75,7 @@ export function useTransactionHistory(opts: {
     if (!canUndo()) return;
     const prev = undoStack.pop()!;
     redoStack.push(clone(current));
-    if (redoStack.length > MAX_HISTORY) redoStack.shift();
+    if (redoStack.length > MAX_HISTORY) undoStack.shift();
     isApplying = true;
     try {
       opts.onRestore(clone(prev));
@@ -115,7 +100,7 @@ export function useTransactionHistory(opts: {
   }
 
   function listDrafts() {
-    drafts = loadDraftsFromStorage();
+    drafts = listOfflineDrafts();
     return drafts;
   }
 
@@ -168,13 +153,12 @@ export function useTransactionHistory(opts: {
   }
 
   function loadDraft(id: string) {
-    drafts = loadDraftsFromStorage();
-    const d = drafts.find((x) => x.id === id);
+    const d = getOfflineDraft(id);
     if (!d) return null;
     isApplying = true;
     try {
-      opts.onRestore(clone(d.snapshot));
-      current = clone(d.snapshot);
+      opts.onRestore(clone(d.snapshot as TxSnapshot));
+      current = clone(d.snapshot as TxSnapshot);
       // after restoring a draft, clear redo stack (new branch)
       redoStack.length = 0;
       undoStack.push(clone(current));
@@ -182,12 +166,12 @@ export function useTransactionHistory(opts: {
     } finally {
       isApplying = false;
     }
-    return d.snapshot;
+    return d.snapshot as TxSnapshot;
   }
 
   function deleteDraft(id: string) {
-    drafts = loadDraftsFromStorage().filter((d) => d.id !== id);
-    saveDraftsToStorage(drafts);
+    deleteOfflineDraft(id);
+    drafts = listOfflineDrafts();
   }
 
   return {
@@ -206,3 +190,4 @@ export function useTransactionHistory(opts: {
     setSequenceCache,
   };
 }
+
