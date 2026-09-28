@@ -51,17 +51,10 @@ This means:
 
 ### CSP Additions Required
 
-When deploying with a passkey relayer, add the relayer domain to `connect-src`:
-
-```
-connect-src ... https://*.stellar-passkey-relayer.com
-```
-
-See `nginx.conf` and `index.html` for the canonical CSP configuration.
-
-### Security Posture Scoring
-
-Passkey smart wallets score **78 / 100** in the dashboard's session security posture model (`getSessionSecurityPosture`), placing them in the **medium-high** tier — above software browser-extension wallets (60–65) and below Ledger native signing (80).  This reflects the strong hardware-bound key guarantee, offset slightly by reliance on a fee-sponsor relayer as an additional trust dependency.
+### 2. Automated Guardrails
+- **Dependabot**: Monitors `npm` and `github-actions` ecosystems daily for updates.
+- **CI Security Audit (#832)**: Every push, pull request, and daily scheduled run audits production dependencies (`pnpm audit --prod`) against remediation SLAs (critical 7 days, high 30 days, moderate 90 days, low 180 days). High and critical advisories fail CI once their SLA elapses and are reported as warnings until then; moderate advisories always warn. Empty or invalid audit output fails the job. Thresholds are configurable via `VULN_FAIL_ON`, `VULN_WARN_ON`, and `VULN_SLA_DAYS` - see [docs/security/dependency-vulnerability-sla.md](docs/security/dependency-vulnerability-sla.md).
+- **Intelligent Dependency Management (#602)**: In-app analysis engine (`src/lib/dependencyManagement.ts`) correlates vulnerability databases / npm audit data, produces risk-scored update recommendations, detects version conflicts, and exposes a dashboard tab (`Dependencies`) plus the Security Dashboard dependency panel.
 
 ## Reporting a Vulnerability
 If you discover a security vulnerability within this project, please send an e-mail to security@stellar-dev-dashboard.org. All security vulnerabilities will be promptly addressed.
