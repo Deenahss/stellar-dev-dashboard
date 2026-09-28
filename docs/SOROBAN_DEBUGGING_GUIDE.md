@@ -10,6 +10,7 @@ Comprehensive guide for debugging Soroban smart contracts during development and
 4. [Debugging Techniques](#debugging-techniques)
 5. [Performance Profiling](#performance-profiling)
 6. [Production Debugging](#production-debugging)
+7. [Footprint Diff Viewer](#footprint-diff-viewer)
 
 ---
 
@@ -656,6 +657,101 @@ pub struct HealthStatus {
     message: String,
 }
 ```
+
+---
+
+## Interactive Debugging Tutorial Series (In-App Education)
+
+The Stellar Developer Dashboard provides an interactive, progressive tutorial series accessible at the `/sorobanDebug` route or via the **Learning Hub** (`/learningHub`). Developers can inspect live simulation outputs, execute code fixes, and test contracts in an isolated environment.
+
+### 1. Simulation Errors & Host Execution Traps
+- **Symptoms**: `InvokeHostFunctionResultCodeTrapped`, VM `unreachable` opcode, or `HostBudgetExceeded`.
+- **Causes**: Unchecked integer arithmetic (`val * 10` on overflow), division by zero, or unbounded loop iterations exceeding 100M CPU instructions.
+- **Diagnostic Procedure**:
+  1. Inspect the RPC `simulateTransaction` response object for `error` details.
+  2. Examine `cost.cpuInsns` and `cost.memBytes` to determine whether resource quotas were exceeded.
+  3. Replace primitive arithmetic with checked operations (`checked_add`, `checked_mul`, `checked_div`).
+  4. Enforce strict batch size bounds (`MAX_BATCH_SIZE = 50`) on array and vector loops.
+
+### 2. Declarative Authorization Failures & Auth Trees
+- **Symptoms**: `InvokeHostFunctionResultCodeAuthorizationError`.
+- **Causes**: Missing caller authorization (`from.require_auth()`), parameter tampering / replay, or unverified sub-contract invocation trees.
+- **Diagnostic Procedure**:
+  1. Inspect required authorizations in the simulation result `auth` array.
+  2. Verify that addresses debiting funds or altering critical account state explicitly invoke `address.require_auth()`.
+  3. Use `address.require_auth_for_args((arg1, arg2).into_val(&env))` to bind authorization to specific call parameters.
+  4. Ensure caller signs authorization trees for deep cross-contract calls.
+
+### 3. Ledger Footprints & Storage Isolation
+- **Symptoms**: `FootprintConflictError`, `MissingFootprintKeyError`, or `LedgerEntryTtlExpired`.
+- **Causes**: Mutating a ledger entry declared in the `readOnly` footprint, accessing expired storage keys, or choosing ephemeral `Temporary` storage for persistent account balances.
+- **Diagnostic Procedure**:
+  1. Review the `resources().footprint()` returned by transaction simulation. Ensure all modified keys are in `readWrite`.
+  2. Prevent state archival by periodically calling `extend_ttl(threshold, extend_to)` on active persistent entries.
+  3. Restrict `Temporary` storage strictly to ephemeral caches; never store user balances or ownership state in temporary entries.
+
+---
+
+## Footprint Diff Viewer
+
+The dashboard's **Contract Interaction** panel now diffs the ledger footprint of
+each simulation against the previous run of the same call, so unexpected
+resource access is visible before a transaction is signed and submitted.
+
+### Where to find it
+
+`Contracts → Contract Interaction → Simulate` renders a **Footprint Diff**
+card under the simulation result. The first simulation shows the current
+footprint summary; every subsequent simulation shows the delta relative to the
+previous successful simulation of that call.
+
+### What is shown
+
+- **Added / removed / unchanged** ledger keys, split by `readOnly` and `readWrite` sections.
+- **Minimum resource fee delta** in stroops between the two simulations.
+- Warnings for higher-risk changes:
+  - `Unexpected write` — a new read-write key whose type is a contract code,
+    trustline, claimable balance, or liquidity pool entry.
+  - `Footprint growth` — the read-write section more than doubled.
+  - `Fee increase` — the minimum resource fee grew by ≥ 25%.
+  - `Unclassified key` — a ledger key whose type could not be determined.
+
+### Programmatic usage
+
+```ts
+import { diffFootprints, explainInvalidFootprint } from '../lib/footprintDiff';
+
+const invalid = explainInvalidFootprint(nextFootprint);
+if (invalid) {
+  console.warn(invalid); // e.g. simulation failed and returned no footprint
+} else {
+  const diff = diffFootprints(previousFootprint, nextFootprint);
+  console.log(diff.summary.addedCount, diff.summary.removedCount);
+}
+```
+
+### Failure and input handling
+
+- `diffFootprints` throws a descriptive error (prefixed with
+  `Baseline footprint:` or `Comparison footprint:`) when a snapshot is missing
+  or malformed, instead of failing deep inside the render tree.
+- Failed simulations return `footprint: null`; the viewer treats this as "no
+  data yet" rather than an error and shows the explanatory message from
+  `explainInvalidFootprint` when a non-null snapshot is malformed.
+- Duplicate ledger keys inside one snapshot are deduplicated before diffing.
+- The diff utility is pure and DOM-free; it runs in node, jsdom tests, and the
+  browser. No network access or secret material is involved — the viewer only
+  reads data the RPC already returned for the simulation.
+
+### Compatibility and security notes
+
+- Footprint snapshots are compared per simulation run in memory only; nothing
+  is persisted, so switching contracts, functions, or accounts resets the
+  baseline.
+- XDR keys are rendered as trimmed previews only; raw base64 is available in
+  the title attribute for copy-out, never decoded client-side.
+- No migration is required: the feature is additive and does not change the
+  shape of `simulateContractCall` results (see #849).
 
 ---
 

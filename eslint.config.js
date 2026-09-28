@@ -14,6 +14,7 @@ export default [
       'playwright-report/**',
       'test-results/**',
       '.kiro/**',
+      '.kilo/**',
       '.storybook/preview.ts',
     ],
   },
@@ -46,7 +47,6 @@ export default [
         ...globals.browser,
         ...globals.node,
         ...globals.vitest,
-        ...globals.jest,
       },
     },
     plugins: {

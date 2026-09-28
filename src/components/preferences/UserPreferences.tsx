@@ -4,6 +4,7 @@ import AddressBook from './AddressBook'
 import ThemeSettings from './ThemeSettings'
 import NotificationPreferences from './NotificationPreferences'
 import AccessibilitySettings from '../accessibility/AccessibilitySettings'
+import PreferenceUndoBanner from './PreferenceUndoBanner'
 import { showTestNotification } from '../../utils/offline'
 import {
   Bell,
@@ -178,7 +179,10 @@ export default function UserPreferences({ onClose }) {
         ))}
       </div>
 
+      <PreferenceUndoBanner style={{ margin: '12px 18px 0 18px' }} />
+
       <div style={{ padding: '18px' }}>
+
         {activeTab === 'general' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <PreferenceRow label="Default Network">

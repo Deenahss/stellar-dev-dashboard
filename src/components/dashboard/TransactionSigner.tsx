@@ -1,31 +1,57 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import type { ReactNode } from 'react'
-import { useStore } from '../../lib/store'
-import { signTransactionWithFreighter } from '../../lib/wallet/freighter'
-import { signXdrWithLedger, isLedgerSupported, getActiveLedgerSession } from '../../lib/wallet/ledger'
-import { NETWORKS } from '../../lib/stellar'
-import { measureAsync } from '../../lib/performanceMonitoring'
-import { loadPreferences, DEFAULT_PREFERENCES } from '../../lib/userPreferences'
-import type { UserPreferences } from '../../lib/userPreferences'
-import Card from './Card'
-import EnhancedTransactionConfirmation from '../security/EnhancedTransactionConfirmation'
-import BiometricAuthOverlay from '../biometrics/BiometricAuthOverlay'
-import { useBehavioralBiometrics } from '../../hooks/useBehavioralBiometrics'
-import { inspectEnvelope } from '../../utils/feeBumpInspector'
-import type { EnvelopeInfo } from '../../utils/feeBumpInspector'
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import type { ReactNode } from 'react';
+import { useStore } from '../../lib/store';
+import { signTransactionWithFreighter } from '../../lib/wallet/freighter';
+import {
+  signXdrWithLedger,
+  isLedgerSupported,
+  getActiveLedgerSession,
+} from '../../lib/wallet/ledger';
+import { NETWORKS } from '../../lib/stellar';
+import { measureAsync } from '../../lib/performanceMonitoring';
+import { loadPreferences, DEFAULT_PREFERENCES } from '../../lib/userPreferences';
+import type { UserPreferences } from '../../lib/userPreferences';
+import Card from './Card';
+import EnhancedTransactionConfirmation from '../security/EnhancedTransactionConfirmation';
+import RiskSummaryPanel from '../security/RiskSummaryPanel';
+import {
+  usePreSignRiskSummary,
+  REVIEW_SHOWN,
+  REVIEW_ERROR,
+} from '../../hooks/usePreSignRiskSummary';
+import BiometricAuthOverlay from '../biometrics/BiometricAuthOverlay';
+import { useBehavioralBiometrics } from '../../hooks/useBehavioralBiometrics';
+import { inspectEnvelope } from '../../utils/feeBumpInspector';
+import type { EnvelopeInfo } from '../../utils/feeBumpInspector';
+import { setCriticalSigningActive } from '../../utils/offline';
 
 export default function TransactionSigner() {
-  const { walletConnected, walletType, walletPublicKey, network } = useStore()
-  const [xdr, setXdr] = useState('')
-  const [envelopeInfo, setEnvelopeInfo] = useState<EnvelopeInfo | null>(null)
-  const [signedXdr, setSignedXdr] = useState<string | null>(null)
-  const [signing, setSigning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
-  const [ledgerPrompt, setLedgerPrompt] = useState(false)
-  const [showConfirmation, setShowConfirmation] = useState(false)
-  const [showBiometricOverlay, setShowBiometricOverlay] = useState(false)
-  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES)
+  const { walletConnected, walletType, walletPublicKey, network } = useStore();
+  const [xdr, setXdr] = useState('');
+  const [envelopeInfo, setEnvelopeInfo] = useState<EnvelopeInfo | null>(null);
+  const [signedXdr, setSignedXdr] = useState<string | null>(null);
+  const [signing, setSigning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [ledgerPrompt, setLedgerPrompt] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [showBiometricOverlay, setShowBiometricOverlay] = useState(false);
+  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
+
+  // #982 — pre-sign risk review.
+  const {
+    summary: riskSummary,
+    reviewError: riskReviewError,
+    onTrustContract: trustRiskContract,
+    beginReview: beginRiskReview,
+    cancelReview: cancelRiskReview,
+    onAcknowledged: acknowledgeRiskReview,
+  } = usePreSignRiskSummary();
+
+  // The envelope that was actually summarised. Held in a ref rather than read
+  // back from `xdr`, because the field stays editable while the review panel is
+  // open and signing whatever it holds then would slip past the review.
+  const reviewedXdrRef = useRef<string | null>(null);
 
   // ─── Behavioral Biometrics ─────────────────────────────────────────────────
   const bio = useBehavioralBiometrics(walletPublicKey);
@@ -41,30 +67,44 @@ export default function TransactionSigner() {
   }, []);
 
   // Start collecting behavior as soon as user interacts with the XDR textarea
-  const handleXdrChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value
-    setXdr(value)
-    setSignedXdr(null)
-    setError(null)
+  const handleXdrChange = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      const value = e.target.value;
+      setXdr(value);
+      setSignedXdr(null);
+      setError(null);
 
-    // Parse envelope on every keystroke so we can show inner-tx details immediately.
-    if (value.trim()) {
-      const result = inspectEnvelope(value.trim(), network)
-      setEnvelopeInfo(result.ok ? result.envelope : null)
-    } else {
-      setEnvelopeInfo(null)
-    }
+      // Parse envelope on every keystroke so we can show inner-tx details immediately.
+      if (value.trim()) {
+        const result = inspectEnvelope(value.trim(), network);
+        setEnvelopeInfo(result.ok ? result.envelope : null);
+      } else {
+        setEnvelopeInfo(null);
+      }
 
-    if (bio.enabled && !bio.authStatus.match(/collecting|evaluating/)) {
-      bio.startCollection()
-    }
-  }, [bio, network])
+      if (bio.enabled && !bio.authStatus.match(/collecting|evaluating/)) {
+        bio.startCollection();
+      }
+    },
+    [bio, network]
+  );
 
   // networkPassphrase
-  const networkPassphrase = NETWORKS[network]?.passphrase ?? NETWORKS.testnet.passphrase
+  const networkPassphrase = NETWORKS[network]?.passphrase ?? NETWORKS.testnet.passphrase;
   const handleSign = async () => {
     if (!xdr.trim()) {
       setError('Please enter a transaction XDR to sign');
+      return;
+    }
+
+    // #982 — the pre-sign risk summary is the first step of every signing path,
+    // ahead of the behavioural biometric gate. An envelope that cannot be
+    // decoded is refused here rather than reaching the wallet unreviewed.
+    reviewedXdrRef.current = xdr.trim();
+    const review = await beginRiskReview(reviewedXdrRef.current);
+    if (review === REVIEW_SHOWN) return;
+    if (review === REVIEW_ERROR) {
+      reviewedXdrRef.current = null;
       return;
     }
 
@@ -106,8 +146,8 @@ export default function TransactionSigner() {
   const _proceedToSign = async () => {
     // On Mainnet, show the explicit review step before confirmation/signing
     if (network === 'mainnet' && !showMainnetReview) {
-      setShowMainnetReview(true)
-      return
+      setShowMainnetReview(true);
+      return;
     }
     if (preferences.transactionConfirmation.enabled) {
       setShowConfirmation(true);
@@ -117,47 +157,59 @@ export default function TransactionSigner() {
   };
 
   const _buildMainnetReviewItems = (): MainnetReviewItem[] => {
-    const items: MainnetReviewItem[] = []
+    const items: MainnetReviewItem[] = [];
     try {
-      const tx = StellarSdk.TransactionBuilder.fromXDR(xdr.trim(), networkPassphrase) as any
-      const source: string = tx.source || tx.sourceAccount?.accountId?.() || '—'
-      items.push({ label: 'Network', value: 'Mainnet (Public)', highlight: true })
-      items.push({ label: 'Source', value: `${source.slice(0, 8)}…${source.slice(-8)}`, mono: true })
-      const fee = tx.fee ?? '—'
-      items.push({ label: 'Fee', value: `${fee} stroops`, mono: true })
-      const ops: any[] = tx.operations || []
-      items.push({ label: 'Operations', value: String(ops.length) })
+      const tx = StellarSdk.TransactionBuilder.fromXDR(xdr.trim(), networkPassphrase) as any;
+      const source: string = tx.source || tx.sourceAccount?.accountId?.() || '—';
+      items.push({ label: 'Network', value: 'Mainnet (Public)', highlight: true });
+      items.push({
+        label: 'Source',
+        value: `${source.slice(0, 8)}…${source.slice(-8)}`,
+        mono: true,
+      });
+      const fee = tx.fee ?? '—';
+      items.push({ label: 'Fee', value: `${fee} stroops`, mono: true });
+      const ops: any[] = tx.operations || [];
+      items.push({ label: 'Operations', value: String(ops.length) });
       ops.forEach((op: any, idx: number) => {
         if (op.type === 'payment' || op.type === 'createAccount') {
-          const dest: string = op.destination || '—'
+          const dest: string = op.destination || '—';
           items.push({
             label: `Destination ${idx + 1}`,
             value: `${dest.slice(0, 8)}…${dest.slice(-8)}`,
             mono: true,
-          })
-          const amt = op.amount ?? op.startingBalance ?? '—'
+          });
+          const amt = op.amount ?? op.startingBalance ?? '—';
           const assetLabel =
-            !op.asset || (op.asset && typeof op.asset.isNative === 'function' && op.asset.isNative())
+            !op.asset ||
+            (op.asset && typeof op.asset.isNative === 'function' && op.asset.isNative())
               ? 'XLM'
-              : op.asset?.code ?? 'unknown'
-          items.push({ label: `Amount ${idx + 1}`, value: `${amt} ${assetLabel}`, highlight: true })
+              : (op.asset?.code ?? 'unknown');
+          items.push({
+            label: `Amount ${idx + 1}`,
+            value: `${amt} ${assetLabel}`,
+            highlight: true,
+          });
         } else if (op.type === 'invokeHostFunction') {
-          items.push({ label: `Op ${idx + 1}`, value: 'Smart contract invocation' })
+          items.push({ label: `Op ${idx + 1}`, value: 'Smart contract invocation' });
         } else {
-          items.push({ label: `Op ${idx + 1}`, value: op.type ?? 'unknown' })
+          items.push({ label: `Op ${idx + 1}`, value: op.type ?? 'unknown' });
         }
-      })
+      });
     } catch {
-      items.push({ label: 'Network', value: 'Mainnet (Public)', highlight: true })
-      items.push({ label: 'Transaction', value: 'Unable to parse XDR for preview' })
+      items.push({ label: 'Network', value: 'Mainnet (Public)', highlight: true });
+      items.push({ label: 'Transaction', value: 'Unable to parse XDR for preview' });
     }
-    return items
-  }
+    return items;
+  };
 
   const doSign = async () => {
     setSigning(true);
     setError(null);
     setSignedXdr(null);
+    // #886 — Protect the signing flow from service-worker activation/reload:
+    // deferred SW updates wait until the flow finishes (finally block below).
+    setCriticalSigningActive(true);
 
     try {
       let result: string | null = null;
@@ -166,7 +218,7 @@ export default function TransactionSigner() {
         const networkName = network === 'mainnet' ? 'PUBLIC' : 'TESTNET';
         result = await measureAsync(
           'TRANSACTION_SIGNING_DURATION',
-          () => signTransactionWithFreighter(xdr.trim(), networkName),
+          () => signTransactionWithFreighter(reviewedXdrRef.current ?? xdr.trim(), networkName),
           { network, walletType: 'freighter' }
         );
       } else if (walletType === 'ledger') {
@@ -185,6 +237,9 @@ export default function TransactionSigner() {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSigning(false);
+      // #886 — Signing is over: a service-worker update deferred during the
+      // flow is now safe to activate (and reload) again.
+      setCriticalSigningActive(false);
     }
   };
 
@@ -289,6 +344,24 @@ export default function TransactionSigner() {
           </span>
         </div>
       </Card>
+    );
+  }
+
+  if (riskSummary || riskReviewError) {
+    return (
+      <RiskSummaryPanel
+        summary={riskSummary}
+        reviewError={riskReviewError}
+        proceedLabel="Sign Transaction"
+        sourceLabel={
+          walletPublicKey
+            ? `signer ${walletPublicKey.slice(0, 6)}…${walletPublicKey.slice(-6)}`
+            : undefined
+        }
+        onAcknowledged={() => acknowledgeRiskReview(() => doSign())}
+        onCancel={cancelRiskReview}
+        onTrustContract={trustRiskContract}
+      />
     );
   }
 
@@ -513,7 +586,10 @@ export default function TransactionSigner() {
             fontWeight: 600,
             cursor: signing ? 'wait' : 'pointer',
             transition: 'var(--transition)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
             opacity: !xdr.trim() ? 0.5 : 1,
           }}
         >
@@ -631,7 +707,7 @@ function mono(text: string) {
     <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', wordBreak: 'break-all' }}>
       {text}
     </span>
-  )
+  );
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -640,28 +716,32 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <span style={{ color: 'var(--text-muted)', minWidth: '120px', flexShrink: 0 }}>{label}</span>
       <span style={{ color: 'var(--text-primary)' }}>{children}</span>
     </div>
-  )
+  );
 }
 
 function EnvelopeDetails({ info }: { info: EnvelopeInfo }) {
   if (info.type === 'fee_bump') {
-    const inner = info.innerTransaction
+    const inner = info.innerTransaction;
     return (
-      <div style={{
-        border: '1px solid var(--cyan-dim)',
-        borderRadius: 'var(--radius-md)',
-        overflow: 'hidden',
-        fontSize: '12px',
-      }}>
+      <div
+        style={{
+          border: '1px solid var(--cyan-dim)',
+          borderRadius: 'var(--radius-md)',
+          overflow: 'hidden',
+          fontSize: '12px',
+        }}
+      >
         {/* Fee-bump header */}
-        <div style={{
-          padding: '8px 12px',
-          background: 'var(--cyan-glow)',
-          borderBottom: '1px solid var(--cyan-dim)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}>
+        <div
+          style={{
+            padding: '8px 12px',
+            background: 'var(--cyan-glow)',
+            borderBottom: '1px solid var(--cyan-dim)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
           <span style={{ fontSize: '14px' }}>⇧</span>
           <span style={{ fontWeight: 600, color: 'var(--cyan)', fontSize: '12px' }}>
             Fee-Bump Transaction
@@ -675,20 +755,24 @@ function EnvelopeDetails({ info }: { info: EnvelopeInfo }) {
         </div>
 
         {/* Inner transaction */}
-        <div style={{
-          margin: '0 12px 12px',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-sm)',
-          overflow: 'hidden',
-        }}>
-          <div style={{
-            padding: '6px 10px',
-            background: 'var(--bg-elevated)',
-            borderBottom: '1px solid var(--border)',
-            fontSize: '11px',
-            fontWeight: 600,
-            color: 'var(--text-secondary)',
-          }}>
+        <div
+          style={{
+            margin: '0 12px 12px',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              padding: '6px 10px',
+              background: 'var(--bg-elevated)',
+              borderBottom: '1px solid var(--border)',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: 'var(--text-secondary)',
+            }}
+          >
             Inner Transaction
           </div>
           <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -704,7 +788,8 @@ function EnvelopeDetails({ info }: { info: EnvelopeInfo }) {
                     {i + 1}. {op.type}
                     {op.source ? (
                       <span style={{ color: 'var(--text-muted)' }}>
-                        {' '}({op.source.slice(0, 6)}…)
+                        {' '}
+                        ({op.source.slice(0, 6)}…)
                       </span>
                     ) : null}
                   </div>
@@ -714,25 +799,29 @@ function EnvelopeDetails({ info }: { info: EnvelopeInfo }) {
           </div>
         </div>
       </div>
-    )
+    );
   }
 
   // Plain transaction
   return (
-    <div style={{
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--radius-md)',
-      overflow: 'hidden',
-      fontSize: '12px',
-    }}>
-      <div style={{
-        padding: '8px 12px',
-        background: 'var(--bg-elevated)',
-        borderBottom: '1px solid var(--border)',
-        fontWeight: 600,
-        color: 'var(--text-secondary)',
+    <div
+      style={{
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-md)',
+        overflow: 'hidden',
         fontSize: '12px',
-      }}>
+      }}
+    >
+      <div
+        style={{
+          padding: '8px 12px',
+          background: 'var(--bg-elevated)',
+          borderBottom: '1px solid var(--border)',
+          fontWeight: 600,
+          color: 'var(--text-secondary)',
+          fontSize: '12px',
+        }}
+      >
         Transaction Envelope
       </div>
       <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -747,9 +836,7 @@ function EnvelopeDetails({ info }: { info: EnvelopeInfo }) {
               <div key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
                 {i + 1}. {op.type}
                 {op.source ? (
-                  <span style={{ color: 'var(--text-muted)' }}>
-                    {' '}({op.source.slice(0, 6)}…)
-                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}> ({op.source.slice(0, 6)}…)</span>
                 ) : null}
               </div>
             ))}
@@ -757,5 +844,5 @@ function EnvelopeDetails({ info }: { info: EnvelopeInfo }) {
         </Row>
       </div>
     </div>
-  )
+  );
 }
