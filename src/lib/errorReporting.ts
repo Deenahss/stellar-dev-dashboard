@@ -269,17 +269,28 @@ async function flushErrorQueue(): Promise<void> {
 
   if (ERROR_REPORTING_CONFIG.endpoint) {
     try {
-      await fetch(ERROR_REPORTING_CONFIG.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
+      // Error reporting is delivery-oriented: `fail-closed` propagates failures
+      // so the batch is re-queued below and retried after the breaker cools down.
+      await guardProviderSend(
+        'errorReporting',
+        async () => {
+          const response = await fetch(ERROR_REPORTING_CONFIG.endpoint as string, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              errors: errorsToSend,
+              sessionId,
+              timestamp: new Date().toISOString()
+            })
+          });
+          if (!response.ok) {
+            throw new Error(`Error reporting endpoint responded ${response.status}`);
+          }
         },
-        body: JSON.stringify({
-          errors: errorsToSend,
-          sessionId,
-          timestamp: new Date().toISOString()
-        })
-      });
+        { failureThreshold: 5, successThreshold: 2, timeout: 60000 },
+      );
     } catch (e) {
       console.error('Failed to send errors to reporting service:', e);
       errorQueue.unshift(...errorsToSend);
@@ -317,7 +328,7 @@ export const reportPerformance = (metric: string, value: number, context: Record
     timestamp: new Date().toISOString()
   };
 
-  console.info(`[Error Reporting Service - Performance] ${metric}: ${value}`, performanceReport);
+  logger.info(`[Error Reporting Service - Performance] ${metric}: ${value}`, { performanceReport });
 };
 
 export const initializeErrorReporting = (config: Partial<ErrorReportingConfig> = {}): void => {
@@ -345,7 +356,7 @@ export const initializeErrorReporting = (config: Partial<ErrorReportingConfig> =
     });
   });
 
-  console.log('[Error Reporting Service] Initialized with config:', ERROR_REPORTING_CONFIG);
+  logger.info('Initialized with config', { config: ERROR_REPORTING_CONFIG });
 };
 
 export const getErrorStats = () => {

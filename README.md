@@ -168,6 +168,42 @@ The dashboard provides auto-generated controls for smart contract interaction wh
 - Compatible with existing `ContractInteraction` components. No migration of user settings is necessary.
 - Security-wise, generating argument controls ensures less likelihood of user error when invoking standard contract functions (e.g. incorrect mapping of manual types to required ABI types).
 
+## WASM Hash History & Authorization Tracking
+
+The dashboard now includes comprehensive visualization tools for tracking contract upgrades, WASM hashes, and authorization requirements.
+
+### Key Features
+
+1. **WASM Hash History**: Automatic tracking of all WASM hashes associated with contract upgrades with filtering, export, and transaction explorer links
+2. **Authorization Requirements Display**: Real-time visualization of authorization status with severity indicators and change history
+3. **Local Storage**: All upgrade data stored locally in browser IndexedDB for privacy and performance
+4. **Network Isolation**: Separate tracking per network (testnet, mainnet, public, custom) to prevent cross-network confusion
+5. **Error Handling**: Comprehensive validation and graceful degradation for unsupported environments
+
+### Integration Points
+
+- **Contracts Panel**: New "📜 WASM History" tab for viewing and managing upgrade history
+- **Contract History Panel**: Recent WASM hashes displayed when filtering by contract ID
+- **Authorization Panel**: Automatic display when contracts are selected with detailed security analysis
+
+### Security Considerations
+
+- **Authorization Severity**: Color-coded severity levels (safe, low, medium, high, critical) for quick security assessment
+- **Change Tracking**: Monitor authorization requirement changes across upgrades to detect security implications
+- **Critical Auth Types**: Admin and owner authorizations are prominently marked as critical severity
+- **Multi-signature Support**: Recognition and display of multisig requirements
+
+### Compatibility & Migration Notes
+
+- **Browser Requirements**: Requires IndexedDB support for local history storage; gracefully degrades to display-only mode if unavailable
+- **Storage Limits**: Large upgrade histories may require periodic cleanup; export functionality available for backup
+- **No Breaking Changes**: Existing contract interactions and history remain unaffected
+- **Data Privacy**: All WASM hash history stored locally; no external transmission of upgrade data
+
+### Documentation
+
+See [WASM_HASH_HISTORY_GUIDE.md](WASM_HASH_HISTORY_GUIDE.md) for detailed usage instructions, API reference, and troubleshooting information.
+
 ## Development
 
 ### Node.js support
@@ -218,6 +254,13 @@ The server-side API uses a narrow trust boundary for user-specific and operation
 
 This keeps user-specific and operational endpoints behind explicit authentication and authorization checks while keeping the API compatible with the existing mock OAuth pattern used in development and test environments.
 
+## Feature Guides
+
+- **Comparative network health scorecards (#867)** — side-by-side Mainnet vs Testnet health scoring with standing caveats: [docs/features/network-health-scorecards.md](docs/features/network-health-scorecards.md), rendered in the Cross-Network panel.
+- **Scheduled report delivery via webhooks (#869)** — authenticated HMAC/bearer delivery of analytics summaries with retries: [docs/features/report-webhook-delivery.md](docs/features/report-webhook-delivery.md).
+- **Transaction Builder i18n (#878)** — complete locale coverage of builder strings across all nine languages: [docs/features/builder-i18n.md](docs/features/builder-i18n.md).
+- **Mutation testing gate for fee math (#895)** — Stryker score gate on stroop conversion and fee estimation: [docs/features/mutation-testing-gate.md](docs/features/mutation-testing-gate.md). Run locally with `pnpm run test:mutation:feemath`.
+
 ## Canary Deployment Health Probes
 
 The API service includes automated canary deployment health probes and auto-abort reliability gating:
@@ -226,3 +269,14 @@ The API service includes automated canary deployment health probes and auto-abor
 - **Critical Route Health Probing**: `pnpm run canary:probe` exercises critical API routes (`/health`, `/health/deep`, `/api/docs`, accounts, transactions, gas prediction) across configurable test iterations.
 - **Error Budget Auto-Abort**: Automatically halts rollouts and executes rollback commands when error budget (default: 5%) or p95 latency thresholds (default: 2000ms) are breached.
 - **Full Guide**: See [docs/CANARY_DEPLOYMENT.md](docs/CANARY_DEPLOYMENT.md) for full architecture, CLI flags, Docker Compose setup, and deployment workflow details.
+
+## Accessibility & WCAG 2.2 AA Conformance
+
+The primary developer workflows (**Account**, **Transactions**, and **Contracts**) conform to **WCAG 2.2 Level AA**:
+- **Focus Not Obscured (SC 2.4.11)**: Dedicated scroll margins on focused elements prevent toolbar/header occlusion.
+- **Target Size Minimum (SC 2.5.8)**: All interactive buttons, tabs, and form controls meet or exceed 24x24 CSS pixels.
+- **Accessible Authentication (SC 3.3.8)**: Secret keys and credential inputs strictly support clipboard pasting and autocomplete.
+- **Error Identification & Association (SC 3.3.1 / SC 3.3.2)**: Dynamic live regions and explicit `aria-describedby` links guide screen reader users through validation errors.
+- **Offline & RPC Failure Handling**: Graceful fallback and live status banners when disconnected from the network.
+- **Full Guide**: See [docs/WCAG_22_AA_GUIDE.md](docs/WCAG_22_AA_GUIDE.md) and [docs/KEYBOARD_NAVIGATION.md](docs/KEYBOARD_NAVIGATION.md).
+

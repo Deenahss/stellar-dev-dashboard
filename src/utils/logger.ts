@@ -8,18 +8,20 @@ export enum LogLevel {
   FATAL = 4,
 }
 
-const LogLevelNames: Record<LogLevel, string> = {
-  [LogLevel.DEBUG]: 'DEBUG',
-  [LogLevel.INFO]: 'INFO',
-  [LogLevel.WARN]: 'WARN',
-  [LogLevel.ERROR]: 'ERROR',
-  [LogLevel.FATAL]: 'FATAL',
-};
+import {
+  logger as structuredLogger,
+  LogLevel as StructuredLogLevel,
+  LogEntry as StructuredLogEntry,
+  createLogger as createStructuredLogger,
+  NamespaceLogger as StructuredNamespaceLogger,
+} from '../lib/logging/logger';
+
+export { LogLevel } from '../lib/logging/logger';
 
 export interface LogEntry {
   timestamp: string;
   level: string;
-  levelValue: LogLevel;
+  levelValue: StructuredLogLevel;
   message: string;
   context: Record<string, unknown>;
   sessionId: string;
@@ -34,22 +36,42 @@ export interface LogEntry {
 
 export type LogHandler = (entry: LogEntry) => void;
 
-let currentLogLevel: LogLevel = LogLevel.INFO;
-let logHandlers: LogHandler[] = [];
-let sessionId = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+const registeredHandlers: LogHandler[] = [];
 
-export const setLogLevel = (level: LogLevel): void => {
-  currentLogLevel = level;
+// Subscribe to structuredLogger to notify legacy handlers if any
+structuredLogger.subscribe((entry: StructuredLogEntry) => {
+  if (registeredHandlers.length === 0) return;
+  const legacyEntry: LogEntry = {
+    timestamp: new Date(entry.timestamp).toISOString(),
+    level: ['DEBUG', 'INFO', 'WARN', 'ERROR', 'CRITICAL'][entry.level] || 'INFO',
+    levelValue: entry.level,
+    message: entry.message,
+    context: entry.context || {},
+    sessionId: entry.sessionId || structuredLogger.getSessionId(),
+    url: typeof window !== 'undefined' ? window.location.href : null,
+    userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+  };
+  registeredHandlers.forEach(handler => {
+    try {
+      handler(legacyEntry);
+    } catch {
+      // Ignored
+    }
+  });
+});
+
+export const setLogLevel = (level: StructuredLogLevel | string): void => {
+  structuredLogger.setLogLevel(level);
 };
 
-export const getLogLevel = (): LogLevel => currentLogLevel;
+export const getLogLevel = (): StructuredLogLevel => structuredLogger.getLogLevel();
 
 export const setSessionId = (id: string): void => {
-  sessionId = id;
+  structuredLogger.setSessionId(id);
 };
 
 export const addLogHandler = (handler: LogHandler): void => {
-  logHandlers.push(handler);
+  registeredHandlers.push(handler);
 };
 
 export const removeLogHandler = (handler: LogHandler): void => {
@@ -114,41 +136,44 @@ function log(
 }
 
 export const debug = (message: string, context: Record<string, unknown> = {}): void => {
-  log(LogLevel.DEBUG, message, context);
+  structuredLogger.debug(message, context);
 };
 
 export const info = (message: string, context: Record<string, unknown> = {}): void => {
-  log(LogLevel.INFO, message, context);
+  structuredLogger.info(message, context);
 };
 
-export const warn = (message: string, context: Record<string, unknown> = {}, error: Error | null = null): void => {
-  log(LogLevel.WARN, message, context, error);
+export const warn = (
+  message: string,
+  context: Record<string, unknown> = {},
+  error: Error | null = null
+): void => {
+  structuredLogger.warn(message, context, undefined);
+  if (error) {
+    structuredLogger.error(error.message, context, undefined, error);
+  }
 };
 
-export const error = (message: string, context: Record<string, unknown> = {}, errorObj: Error | null = null): void => {
-  log(LogLevel.ERROR, message, context, errorObj);
+export const error = (
+  message: string,
+  context: Record<string, unknown> = {},
+  errorObj: Error | null = null
+): void => {
+  structuredLogger.error(message, context, undefined, errorObj || undefined);
 };
 
-export const fatal = (message: string, context: Record<string, unknown> = {}, errorObj: Error | null = null): void => {
-  log(LogLevel.FATAL, message, context, errorObj);
+export const fatal = (
+  message: string,
+  context: Record<string, unknown> = {},
+  errorObj: Error | null = null
+): void => {
+  structuredLogger.critical(message, context, undefined, errorObj || undefined);
 };
 
-export interface NamespaceLogger {
-  debug: (msg: string, ctx?: Record<string, unknown>) => void;
-  info: (msg: string, ctx?: Record<string, unknown>) => void;
-  warn: (msg: string, ctx?: Record<string, unknown>, err?: Error | null) => void;
-  error: (msg: string, ctx?: Record<string, unknown>, err?: Error | null) => void;
-  fatal: (msg: string, ctx?: Record<string, unknown>, err?: Error | null) => void;
-}
+export type NamespaceLogger = StructuredNamespaceLogger;
 
-export const createLogger = (namespace: string): NamespaceLogger => {
-  return {
-    debug: (msg, ctx) => debug(`[${namespace}] ${msg}`, ctx),
-    info: (msg, ctx) => info(`[${namespace}] ${msg}`, ctx),
-    warn: (msg, ctx, err) => warn(`[${namespace}] ${msg}`, ctx, err),
-    error: (msg, ctx, err) => error(`[${namespace}] ${msg}`, ctx, err),
-    fatal: (msg, ctx, err) => fatal(`[${namespace}] ${msg}`, ctx, err),
-  };
+export const createLogger = (namespace: string): StructuredNamespaceLogger => {
+  return createStructuredLogger(namespace);
 };
 
 export const logger = {
