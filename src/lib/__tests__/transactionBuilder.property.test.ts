@@ -27,21 +27,29 @@ function publicKeyArb() {
   return keypairArb().map((kp) => kp.publicKey());
 }
 
+function formatStellarAmount(stroops: bigint): string {
+  const whole = stroops / 10_000_000n;
+  const frac = (stroops % 10_000_000n).toString().padStart(7, "0").replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : `${whole}`;
+}
+
 function validAmountArb() {
   return fc
     .bigInt({ min: 1n, max: 10000000000000000n })
     .map((stroops) => (Number(stroops) / 10000000).toFixed(7));
+    .bigInt({ min: 1n, max: 1_000_000_000n * 10_000_000n })
+    .map(formatStellarAmount);
 }
 
 function extremeAmountArb() {
   return fc.oneof(
-    fc.constant(0),
-    fc.constant(-1),
-    fc.constant(MIN_AMOUNT / 2),
-    fc.constant(Number.MAX_SAFE_INTEGER + 1),
-    fc.constant(Infinity),
-    fc.constant(NaN),
-    fc.constant(-Infinity),
+    fc.constant("0"),
+    fc.constant("-1"),
+    fc.constant("0.00000001"), // 8 decimal places (invalid)
+    fc.constant("NaN"),
+    fc.constant("Infinity"),
+    fc.constant("-Infinity"),
+    fc.constant("abc"),
     validAmountArb()
   );
 }
@@ -50,6 +58,7 @@ function validMemoArb() {
   return fc.oneof(
     fc.record({ type: fc.constant("MEMO_TEXT"), value: fc.string({ maxLength: 28 }) }),
     fc.record({ type: fc.constant("MEMO_ID"), value: fc.bigInt({ min: 0n, max: 2n ** 64n - 1n }).map(String) }),
+    fc.record({ type: fc.constant("MEMO_ID"), value: fc.bigInt({ min: 0n, max: 2n ** 63n - 1n }).map(String) }),
     fc.record({ type: fc.constant("MEMO_HASH"), value: fc.stringMatching(/^[0-9a-fA-F]{64}$/) }),
     fc.record({ type: fc.constant("MEMO_RETURN"), value: fc.stringMatching(/^[0-9a-fA-F]{64}$/) }),
     fc.record({ type: fc.constant("MEMO_NONE"), value: fc.constant("") }),
@@ -60,6 +69,7 @@ function invalidMemoArb() {
   return fc.oneof(
     fc.record({ type: fc.constant("MEMO_TEXT"), value: fc.string({ minLength: 29, maxLength: 100 }) }),
     fc.record({ type: fc.constant("MEMO_ID"), value: fc.constant("not_a_valid_memo_id") }),
+    fc.record({ type: fc.constant("MEMO_ID"), value: fc.constant("not-a-number") }),
     fc.record({ type: fc.constant("MEMO_HASH"), value: fc.stringMatching(/^[0-9a-fA-F]{1,63}$/) }),
     fc.record({ type: fc.constant("MEMO_RETURN"), value: fc.stringMatching(/^[0-9a-fA-F]{65,128}$/) }),
   );
@@ -154,6 +164,7 @@ describe("Property-based: XDR round-trips", () => {
     fc.assert(
       fc.property(
         fc.stringMatching(/^[A-Z0-9]{1,4}$/),
+        fc.stringMatching(/^[a-zA-Z0-9]{1,4}$/),
         publicKeyArb(),
         validAmountArb(),
         (code, issuer, limit) => {
@@ -193,6 +204,10 @@ describe("Property-based: Amount boundary rejection", () => {
         const numAmount = typeof amount === 'number' ? amount : parseFloat(String(amount));
 
         if (numAmount < MIN_AMOUNT || !isFinite(numAmount) || isNaN(numAmount) || numAmount > MAX_SAFE_AMOUNT) {
+        const num = Number(amount);
+        const isInvalid = !/^\d+(\.\d{1,7})?$/.test(amount) || isNaN(num) || num <= 0 || !isFinite(num) || num > MAX_SAFE_AMOUNT;
+
+        if (isInvalid) {
           expect(() => {
             StellarSdk.Operation.payment({
               destination: dest,
