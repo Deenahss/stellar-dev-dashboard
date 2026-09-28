@@ -1,6 +1,7 @@
 import { Transaction, Networks } from '@stellar/stellar-sdk';
 import { encryptWithKey, decryptWithKey, generateKey } from './encryption.js';
 import auditTrail from './auditTrail.js';
+import { requireAllowedEndpoint, validateEndpointUrl } from './endpointAllowlist';
 
 /**
  * Stellar Anchor Integration System
@@ -523,16 +524,28 @@ class AnchorService {
     try {
       const toml = await this.fetchStellarToml(anchor.homeDomain);
       return {
-        sep10Auth: !!toml.WEB_AUTH_ENDPOINT,
-        sep24Interactive: !!toml.TRANSFER_SERVER_SEP0024,
-        sep31CrossBorder: !!toml.DIRECT_PAYMENT_SERVER,
-        sep6Transfer: !!toml.TRANSFER_SERVER,
-        sep12KYC: !!toml.KYC_SERVER,
+        sep10Auth: this.isAllowedSepEndpoint(toml.WEB_AUTH_ENDPOINT, anchor.homeDomain, 'SEP-10'),
+        sep24Interactive: this.isAllowedSepEndpoint(toml.TRANSFER_SERVER_SEP0024, anchor.homeDomain, 'SEP-24'),
+        sep31CrossBorder: this.isAllowedSepEndpoint(toml.DIRECT_PAYMENT_SERVER, anchor.homeDomain, 'SEP-31'),
+        sep6Transfer: this.isAllowedSepEndpoint(toml.TRANSFER_SERVER, anchor.homeDomain, 'SEP-6'),
+        sep12KYC: this.isAllowedSepEndpoint(toml.KYC_SERVER, anchor.homeDomain, 'SEP-12'),
         currencies: toml.CURRENCIES || []
       };
     } catch (e) {
       return null;
     }
+  }
+
+  isAllowedSepEndpoint(endpoint, homeDomain, kind) {
+    if (!endpoint) return false;
+    const validation = validateEndpointUrl(endpoint, homeDomain);
+    if (!validation.allowed) {
+      const message = `Blocked unexpected ${kind} endpoint: ${validation.reason}`;
+      console.warn(message, { endpoint, homeDomain });
+      auditTrail.logSecurityEvent(message, { endpoint, homeDomain });
+      return false;
+    }
+    return true;
   }
 
   async getWebAuthEndpoint(anchor) {
@@ -541,7 +554,7 @@ class AnchorService {
     }
 
     if (anchor.authEndpoint) {
-      return anchor.authEndpoint;
+      return requireAllowedEndpoint(anchor.authEndpoint, anchor.homeDomain, 'SEP-10').toString();
     }
 
     if (anchor.homeDomain) {
@@ -549,7 +562,7 @@ class AnchorService {
       if (!toml.WEB_AUTH_ENDPOINT) {
         throw new Error(`WEB_AUTH_ENDPOINT not defined in stellar.toml for ${anchor.homeDomain}`);
       }
-      return toml.WEB_AUTH_ENDPOINT;
+      return requireAllowedEndpoint(toml.WEB_AUTH_ENDPOINT, anchor.homeDomain, 'SEP-10').toString();
     }
 
     throw new Error(`Anchor ${anchor.id} does not support SEP-10 authentication`);
@@ -815,6 +828,94 @@ class AnchorService {
         score: r.score
       })).sort((a, b) => a.fee - b.fee)
     };
+  }
+
+  // --- SEP-38 Quote Endpoints ---
+
+  async getQuoteServer(anchorId) {
+    const anchor = this.getAnchor(anchorId);
+    if (!anchor || !anchor.homeDomain) throw new Error('Anchor not found or missing home domain');
+    const toml = await this.fetchStellarToml(anchor.homeDomain);
+    return toml.ANCHOR_QUOTE_SERVER;
+  }
+
+  async getSep38Info(anchorId) {
+    const quoteServer = await this.getQuoteServer(anchorId);
+    if (!quoteServer) throw new Error(`Anchor ${anchorId} does not support SEP-38 quotes`);
+    
+    const response = await fetch(`${quoteServer}/info`);
+    if (!response.ok) throw new Error(`Failed to fetch SEP-38 info: ${response.status}`);
+    return await response.json();
+  }
+
+  async getSep38Prices(anchorId, sellAsset, sellAmount, sellDeliveryMethod, buyDeliveryMethod, countryCode) {
+    const quoteServer = await this.getQuoteServer(anchorId);
+    if (!quoteServer) throw new Error(`Anchor ${anchorId} does not support SEP-38 quotes`);
+
+    const url = new URL(`${quoteServer}/prices`);
+    url.searchParams.set('sell_asset', sellAsset);
+    url.searchParams.set('sell_amount', sellAmount);
+    if (sellDeliveryMethod) url.searchParams.set('sell_delivery_method', sellDeliveryMethod);
+    if (buyDeliveryMethod) url.searchParams.set('buy_delivery_method', buyDeliveryMethod);
+    if (countryCode) url.searchParams.set('country_code', countryCode);
+
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error(`Failed to fetch SEP-38 prices: ${response.status}`);
+    return await response.json();
+  }
+
+  async getSep38Price(anchorId, context, sellAsset, buyAsset, amount, type, sellDeliveryMethod, buyDeliveryMethod, countryCode) {
+    const quoteServer = await this.getQuoteServer(anchorId);
+    if (!quoteServer) throw new Error(`Anchor ${anchorId} does not support SEP-38 quotes`);
+
+    const url = new URL(`${quoteServer}/price`);
+    url.searchParams.set('context', context);
+    url.searchParams.set('sell_asset', sellAsset);
+    url.searchParams.set('buy_asset', buyAsset);
+    if (type === 'sell') {
+      url.searchParams.set('sell_amount', amount);
+    } else {
+      url.searchParams.set('buy_amount', amount);
+    }
+    if (sellDeliveryMethod) url.searchParams.set('sell_delivery_method', sellDeliveryMethod);
+    if (buyDeliveryMethod) url.searchParams.set('buy_delivery_method', buyDeliveryMethod);
+    if (countryCode) url.searchParams.set('country_code', countryCode);
+
+    const response = await fetch(url.toString());
+    if (!response.ok) throw new Error(`Failed to fetch SEP-38 price: ${response.status}`);
+    return await response.json();
+  }
+
+  async requestSep38Quote(anchorId, token, context, sellAsset, buyAsset, amount, type, expireAfter) {
+    const quoteServer = await this.getQuoteServer(anchorId);
+    if (!quoteServer) throw new Error(`Anchor ${anchorId} does not support SEP-38 quotes`);
+
+    const body = {
+      context,
+      sell_asset: sellAsset,
+      buy_asset: buyAsset,
+    };
+    if (type === 'sell') {
+      body.sell_amount = amount.toString();
+    } else {
+      body.buy_amount = amount.toString();
+    }
+    if (expireAfter) body.expire_after = expireAfter;
+
+    const response = await fetch(`${quoteServer}/quote`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || `Failed to fetch SEP-38 quote: ${response.status}`);
+    }
+    return await response.json();
   }
 }
 
