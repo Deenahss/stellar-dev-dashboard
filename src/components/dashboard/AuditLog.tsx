@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef, type MouseEvent, type ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useStore } from '../../lib/store';
 import { formatDistanceToNow } from 'date-fns';
+import { Download, Printer } from 'lucide-react';
 import Card from './Card';
+import EnhancedTable, { type TableDensity } from '../common/EnhancedTable';
+import { useTablePresets } from '../../hooks/useTablePresets';
 import type { AuditEntry } from '../../types/audit';
 
 interface LogRowProps {
@@ -34,6 +37,13 @@ const SEVERITY_COLORS: Record<string, { bg: string; color: string; border: strin
 
 const CATEGORIES = ['security', 'transaction', 'auth', 'system', 'network', 'user'];
 const SEVERITIES = ['critical', 'error', 'warning', 'info', 'debug'];
+
+const AUDIT_LOG_COLUMNS = [
+  { id: 'severity', label: 'Severity', width: 'auto' },
+  { id: 'category', label: 'Category', width: '100px' },
+  { id: 'action', label: 'Action', width: '1fr' },
+  { id: 'timestamp', label: 'Time', width: '140px' },
+];
 
 const SeverityBadge = ({ severity }: SeverityBadgeProps) => {
   const style = SEVERITY_COLORS[severity] || SEVERITY_COLORS.info;
@@ -286,6 +296,9 @@ export default function AuditLog() {
   const [filters, setFilters] = useState<FilterState>({ severity: [], category: [], search: '' });
   const listRef = useRef<HTMLDivElement>(null);
 
+  // Table presets for audit log
+  const auditPresets = useTablePresets('audit-log', ['severity', 'category', 'action', 'timestamp'], 'comfortable');
+
   useEffect(() => {
     async function fetchLogs() {
       setIsLoading(true);
@@ -318,6 +331,33 @@ export default function AuditLog() {
 
   const selectedEntry = logs.find((e: AuditEntry) => e.id === selectedId) || null;
 
+  const handleExportCsv = useCallback(() => {
+    const headers = ['Severity', 'Category', 'Action', 'Timestamp'];
+    const rows = filteredLogs.map(log => [
+      log.severity,
+      log.category,
+      log.action,
+      new Date(log.timestamp).toISOString()
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `audit-log-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [filteredLogs]);
+
+  const handlePrint = useCallback(() => {
+    window.print();
+  }, []);
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
       <div>
@@ -329,50 +369,139 @@ export default function AuditLog() {
         </p>
       </div>
 
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button
+          onClick={handleExportCsv}
+          style={{
+            padding: '8px 12px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-secondary)',
+            fontSize: '12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
+        >
+          <Download size={14} />
+          <span>Export CSV</span>
+        </button>
+        <button
+          onClick={handlePrint}
+          style={{
+            padding: '8px 12px',
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-sm)',
+            color: 'var(--text-secondary)',
+            fontSize: '12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+          }}
+        >
+          <Printer size={14} />
+          <span>Print</span>
+        </button>
+      </div>
+
       <FilterBar onFilterChange={(f: FilterState) => setFilters(f)} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '14px' }}>
-        <div className="card" style={{
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-md)',
-          overflow: 'hidden',
-          maxHeight: '600px',
+      <EnhancedTable
+        columns={AUDIT_LOG_COLUMNS}
+        visibleColumns={auditPresets.visibleColumns}
+        onVisibleColumnsChange={auditPresets.setVisibleColumns}
+        density={auditPresets.density}
+        onDensityChange={auditPresets.setDensity}
+        presets={auditPresets.presets}
+        onPresetSave={auditPresets.onPresetSave}
+        onPresetDelete={auditPresets.onPresetDelete}
+        onPresetApply={auditPresets.onPresetApply}
+        stickyHeader={true}
+        maxHeight="600px"
+      >
+        <div style={{
+          padding: '10px 14px',
+          borderBottom: '1px solid var(--border)',
+          fontSize: '12px',
+          color: 'var(--text-muted)',
           display: 'flex',
-          flexDirection: 'column',
+          justifyContent: 'space-between',
+          background: 'var(--bg-card)',
         }}>
-          <div style={{
-            padding: '10px 14px',
-            borderBottom: '1px solid var(--border)',
-            fontSize: '12px',
-            color: 'var(--text-muted)',
-            display: 'flex',
-            justifyContent: 'space-between',
-          }}>
-            <span>{filteredLogs.length} entries</span>
-            <span>{logs.length} total</span>
-          </div>
-          <div ref={listRef} style={{ overflowY: 'auto', flex: 1 }}>
-            {isLoading ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                Loading audit log...
-              </div>
-            ) : filteredLogs.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                {logs.length === 0 ? 'No audit entries yet.' : 'No entries match the current filters.'}
-              </div>
-            ) : (
-              filteredLogs.map((entry: AuditEntry) => (
-                <LogRow
-                  key={entry.id}
-                  entry={entry}
-                  isSelected={selectedId === entry.id}
-                  onSelect={setSelectedId}
-                />
-              ))
-            )}
-          </div>
+          <span>{filteredLogs.length} entries</span>
+          <span>{logs.length} total</span>
         </div>
+        {isLoading ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+            Loading audit log...
+          </div>
+        ) : filteredLogs.length === 0 ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+            {logs.length === 0 ? 'No audit entries yet.' : 'No entries match the current filters.'}
+          </div>
+        ) : (
+          filteredLogs.map((entry: AuditEntry) => (
+            <div
+              key={entry.id}
+              onClick={() => setSelectedId(entry.id)}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: auditPresets.visibleColumns.map((id) => {
+                  const col = AUDIT_LOG_COLUMNS.find((c) => c.id === id);
+                  return col?.width || '1fr';
+                }).join(' '),
+                gap: '12px',
+                padding: auditPresets.density === 'compact' ? '8px 12px' : auditPresets.density === 'comfortable' ? '10px 14px' : '12px 16px',
+                borderBottom: '1px solid var(--border)',
+                cursor: 'pointer',
+                background: selectedId === entry.id ? 'var(--cyan-glow-sm)' : 'transparent',
+                transition: 'var(--transition)',
+                alignItems: 'center',
+                fontSize: auditPresets.density === 'compact' ? '11px' : auditPresets.density === 'comfortable' ? '12px' : '13px',
+              }}
+            >
+              {auditPresets.visibleColumns.includes('severity') && (
+                <SeverityBadge severity={entry.severity} />
+              )}
+              {auditPresets.visibleColumns.includes('category') && (
+                <div style={{
+                  color: 'var(--text-muted)',
+                  fontSize: auditPresets.density === 'compact' ? '10px' : auditPresets.density === 'comfortable' ? '11px' : '12px',
+                  fontFamily: 'var(--font-mono)',
+                  textTransform: 'capitalize',
+                }}>
+                  {entry.category}
+                </div>
+              )}
+              {auditPresets.visibleColumns.includes('action') && (
+                <div style={{
+                  color: 'var(--text-primary)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  fontFamily: 'var(--font-mono)',
+                }}>
+                  {entry.action}
+                </div>
+              )}
+              {auditPresets.visibleColumns.includes('timestamp') && (
+                <div style={{
+                  color: 'var(--text-muted)',
+                  fontSize: auditPresets.density === 'compact' ? '10px' : auditPresets.density === 'comfortable' ? '11px' : '12px',
+                  fontFamily: 'var(--font-mono)',
+                  textAlign: 'right',
+                }}>
+                  {formatDistanceToNow(new Date(entry.timestamp), { addSuffix: true })}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </EnhancedTable>
 
         <div className="card" style={{
           background: 'var(--bg-elevated)',
