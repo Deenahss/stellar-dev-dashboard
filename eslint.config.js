@@ -35,7 +35,7 @@ export default [
     },
   },
   {
-    files: ['**/*.{js,jsx,ts,tsx}'],
+    files: ['**/*.{js,jsx,ts,tsx,cjs,mjs}'],
     languageOptions: {
       ecmaVersion: 'latest',
       sourceType: 'module',
@@ -48,7 +48,6 @@ export default [
         ...globals.browser,
         ...globals.node,
         ...globals.vitest,
-        ...globals.jest,
       },
     },
     plugins: {
