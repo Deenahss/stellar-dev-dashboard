@@ -1,5 +1,7 @@
 import { logger } from './logging';
 
+import { guardProviderSend } from '../utils/providerCircuitBreaker';
+
 type PerfConfig = {
   rumEndpoint?: string; // optional endpoint to send RUM events
   budget?: {
