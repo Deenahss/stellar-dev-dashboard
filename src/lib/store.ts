@@ -9,6 +9,7 @@ import { applyCustomThemeToDOM, removeCustomThemeFromDOM, saveThemeVarsToStorage
 import { handleNetworkSwitch } from './cacheInit'
 import { normalizeLedgerSequence } from './ledgerPin'
 import { hydrateDemoState } from './demoMode'
+import { loadIdleTimeoutMinutes, saveIdleTimeoutMinutes } from './wallet/idleTimeout'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -257,6 +258,9 @@ export interface StoreState {
   setWalletConnected: (connected: boolean, type?: string | null, publicKey?: string | null) => void
   disconnectWallet: () => void
   revokeWalletSession: (reason?: string) => void
+  /** Minutes of inactivity before the wallet disconnect prompt; 0 = off (#837). */
+  walletIdleTimeoutMinutes: number
+  setWalletIdleTimeoutMinutes: (minutes: unknown) => void
 
   notifications: Notification[]
   notificationHistory: Notification[]
@@ -674,6 +678,9 @@ export const useStore = create<StoreState>((set) => ({
       accountLoading: false,
       accountError: null,
     }),
+  walletIdleTimeoutMinutes: loadIdleTimeoutMinutes(),
+  setWalletIdleTimeoutMinutes: (minutes) =>
+    set({ walletIdleTimeoutMinutes: saveIdleTimeoutMinutes(minutes) }),
 
   notifications: [],
   notificationHistory: [],

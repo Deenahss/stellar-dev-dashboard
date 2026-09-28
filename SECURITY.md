@@ -6,34 +6,20 @@ Security fixes are applied to the latest release on the default branch. Older
 releases may not receive backports; please upgrade to the latest version before
 reporting an issue.
 
-## Reporting a Vulnerability
+## Wallet session idle timeout
 
-Please do **not** open a public issue for security vulnerabilities. Instead,
-report them privately using GitHub's [private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability)
-feature for this repository, or contact the maintainers directly.
+Connected wallets are disconnected after a configurable idle period (default
+15 minutes) with a confirmation prompt first. See
+[`docs/security/wallet-idle-timeout.md`](docs/security/wallet-idle-timeout.md).
 
-When reporting, please include:
+## Code owners for security-sensitive paths
 
-- A description of the vulnerability and its impact.
-- Steps to reproduce (proof of concept if possible).
-- Affected versions and environment details.
-- Any suggested remediation.
+Wallet, authentication, cryptography, and CI paths require review from the
+owners listed in [`.github/CODEOWNERS`](.github/CODEOWNERS). Coverage is
+enforced in CI; see [`docs/contributing.md`](docs/contributing.md#code-owners).
 
-We aim to acknowledge reports within a few business days and will keep you
-updated as we investigate and remediate.
-
-## Privileged Actions and Audit Export
-
-Privileged dashboard actions — including Mainnet writes and settings changes —
-are recorded in a tamper-evident audit log. The log is append-only and each
-entry is chained to the previous entry via a cryptographic hash so that any
-modification, reordering, or deletion of historical records is detectable.
-
-## Passkey Smart Wallet Threat Model (#974)
-
-This section covers the additional attack surface introduced by WebAuthn / secp256r1 passkey-based smart wallet accounts (Protocol 21+).
-
-### What is a Passkey Smart Wallet?
+## Overview
+This document outlines the security architecture and threat model for the `stellar-dev-dashboard`. Our security strategy focuses on frontend hardening, automated dependency management, and restrictive communication policies.
 
 A passkey smart wallet is a Soroban contract account (C-address) whose `__check_auth` function verifies P-256 (secp256r1) WebAuthn signatures instead of classical Ed25519 signatures.  The dashboard creates credentials, derives signing challenges, and routes signed auth entries through a fee-sponsor relayer.
 
