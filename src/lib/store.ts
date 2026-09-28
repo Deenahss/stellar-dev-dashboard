@@ -855,7 +855,7 @@ function migrateState(saved: any) {
 }
 
 if (typeof window !== 'undefined') {
-  getStoredValue(STORE_PERSIST_KEY).then((saved: Record<string, unknown> | null) => {
+  Promise.resolve(getStoredValue(STORE_PERSIST_KEY)).then((saved: Record<string, unknown> | null) => {
     if (!saved || typeof saved !== 'object') return
     
     // Check version

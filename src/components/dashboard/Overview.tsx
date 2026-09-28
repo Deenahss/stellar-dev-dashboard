@@ -1,4 +1,4 @@
-import React, { useState, useEffect, type ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
 import { useStore } from '../../lib/store';
 import { shortAddress } from '../../lib/stellar';
 import CopyableValue from './CopyableValue';
@@ -9,7 +9,14 @@ import { useResponsive } from '../../hooks/useResponsive';
 import { usePresence } from '../../hooks/usePresence';
 import { addBreadcrumb } from '../../lib/errorReporting';
 import { getDashboardLayout, saveDashboardLayout } from '../../lib/userPreferences';
-import { getActiveLayout, loadAllLayouts, setActiveLayout, type DashboardLayout } from '../../lib/dashboardLayouts';
+import {
+  getActiveLayout,
+  loadAllLayouts,
+  setActiveLayout,
+  extractLayoutFromCurrentUrl,
+  snapshotWidgetLayout,
+  type DashboardLayout,
+} from '../../lib/dashboardLayouts';
 import BalanceWidget from '../layout/widgets/BalanceWidget';
 import AssetsWidget from '../layout/widgets/AssetsWidget';
 import TransactionsWidget from '../layout/widgets/TransactionsWidget';
@@ -70,10 +77,17 @@ export default function Overview() {
   const [showLayoutManager, setShowLayoutManager] = useState(false);
   const [savedLayouts, setSavedLayouts] = useState<DashboardLayout[]>([]);
   const [activeLayoutName, setActiveLayoutName] = useState<string>('Default');
+  const lastSnapshotRef = useRef<number | null>(null);
 
   useEffect(() => {
     async function hydrateDashboardLayout() {
       try {
+        // A layout shared via URL hash arrives before the Layout Manager is ever
+        // opened, so surface it as soon as the dashboard mounts.
+        if (extractLayoutFromCurrentUrl()) {
+          setShowLayoutManager(true);
+        }
+
         // Try to load from new multi-layout system first
         const activeLayout = await getActiveLayout();
         const allLayouts = await loadAllLayouts();
@@ -155,8 +169,28 @@ export default function Overview() {
     await saveDashboardLayout(serializedLayout);
   };
 
-  const refreshWidgets = () => {
-    setWidgets(prevWidgets =>
+  /**
+   * Snapshot the current widget set into layout history before a mutating
+   * gesture, so drag / resize / add / remove can be restored as one step.
+   * Coalesced per gesture: repeated calls within a short window are ignored.
+   */
+  const snapshotBeforeEdit = useCallback(async (reason: string) => {
+    const now = Date.now();
+    if (lastSnapshotRef.current !== null && now - lastSnapshotRef.current < 500) return;
+    lastSnapshotRef.current = now;
+    await snapshotWidgetLayout(
+      widgets.map((w) => ({ id: w.id, type: w.type, height: w.height, span: w.span })),
+      reason,
+      activeLayoutName,
+    );
+  }, [widgets, activeLayoutName]);
+
+  /** Fired by DashboardGrid at the start of a drag or resize gesture. */
+  const handleEditStart = useCallback((gesture: 'drag' | 'resize') => {
+    snapshotBeforeEdit('before-edit');
+  }, [snapshotBeforeEdit]);
+
+  const refreshWidgets = () => {    setWidgets(prevWidgets =>
       prevWidgets.map((widget: WidgetItem) => ({
         ...widget,
         component: React.createElement(getWidgetComponent(widget.type), {
@@ -184,12 +218,14 @@ export default function Overview() {
   };
 
   const handleWidgetRemove = (widget: WidgetItem) => {
+    snapshotBeforeEdit('before-remove');
     const updatedWidgets = widgets.filter(w => w.id !== widget.id);
     persistAndSyncLayout(updatedWidgets);
     addBreadcrumb('Widget removed', 'user_action', { widgetId: widget.id, widgetType: widget.type });
   };
 
   const handleAddWidget = (newWidget: WidgetConfig) => {
+    snapshotBeforeEdit('before-add');
     const freshWidgetWithElement: WidgetItem = {
       ...newWidget,
       component: React.createElement(getWidgetComponent(newWidget.type), {
@@ -422,6 +458,7 @@ export default function Overview() {
         onLayoutChange={handleLayoutChange}
         onWidgetResize={handleWidgetResize}
         onWidgetRemove={handleWidgetRemove}
+        onEditStart={handleEditStart}
         editable={isEditing}
         columns={getColumns()}
         gap={isMobile ? 12 : 16}

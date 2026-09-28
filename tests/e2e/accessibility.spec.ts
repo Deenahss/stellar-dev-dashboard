@@ -1,15 +1,14 @@
 import { test, expect } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-test.describe('Accessibility Tests (WCAG 2.2 AA)', () => {
+test.describe('Accessibility Tests', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('hasCompletedOnboarding', 'true');
-      localStorage.setItem('stellar-dashboard-theme', 'dark');
     });
   });
 
-  test('homepage should not have any automatically detectable accessibility issues (WCAG 2.2 AA)', async ({ page }) => {
+  test('homepage should not have any automatically detectable accessibility issues', async ({ page }) => {
     await page.goto('/');
     const accessibilityScanResults = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'])
