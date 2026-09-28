@@ -2,6 +2,7 @@ import type { LayersModel, Tensor, Tensor2D } from '@tensorflow/tfjs';
 import { loadTfRuntime, requireTfRuntime } from '../mlRuntime';
 import { getSimilarFixes, recordFix, updateFixHelpful, type FixRecord } from './FixHistoryStore';
 import { formatErrorMessage } from '../../utils/errorHandler';
+import { logger } from '../logging';
 
 export interface RecommendedSolution {
   id: string;
@@ -427,7 +428,7 @@ async function trainModel(
       callbacks: {
         onEpochEnd: (_epoch, logs) => {
           if (logs) {
-            console.debug(`[DebugAssistant] Training epoch ${_epoch}: loss=${logs.loss.toFixed(4)}`);
+            logger.debug(`[DebugAssistant] Training epoch ${_epoch}: loss=${logs.loss.toFixed(4)}`);
           }
         },
       },
@@ -439,6 +440,6 @@ async function trainModel(
     await currentModel.save('indexeddb://stellar-debug-model');
     model = currentModel;
   } catch (err) {
-    console.warn('[DebugAssistant] Model training failed:', err);
+    logger.warn('[DebugAssistant] Model training failed', { error: err });
   }
 }

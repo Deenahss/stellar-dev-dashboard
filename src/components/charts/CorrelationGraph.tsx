@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect, Suspense, lazy } from "react";
 import { useCorrelation } from "../../hooks/useCorrelation";
+import { useReducedMotion } from "../../hooks/useReducedMotion";
 
 // `react-force-graph-2d` drags in `force-graph` + `d3-force-3d` (~400 KB
 // uncompressed). It is only useful once the correlation graph is actually on
@@ -17,6 +18,7 @@ function GraphLoadingFallback() {
 
 export default function CorrelationGraph() {
   const { data, loading, error } = useCorrelation();
+  const reducedMotion = useReducedMotion();
   const graphRef = useRef<any>();
   const [selectedLink, setSelectedLink] = useState<any>(null);
 
