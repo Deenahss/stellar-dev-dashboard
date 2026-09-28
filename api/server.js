@@ -33,9 +33,9 @@ app.use('/api/v1/transactions', oauthAuth, transactionsRouter);
 app.use('/api/v1/behavior', oauthAuth, behaviorRouter);
 app.use('/api/v1/access-control', oauthAuth, requireRole('admin'), accessControlRouter);
 app.use('/api/v1/notification-summaries', oauthAuth, notificationSummariesRouter);
-app.use('/api/v1', oauthAuth, gasPredictionRouter);
 app.use('/api/v1/analytics', oauthAuth, requireRole('admin'), analyticsRouter);
-app.use('/api/v1/migration', migrationRouter);
+app.use('/api/v1/migration', migrationRouter); // Public migration endpoints (before catch-all)
+app.use('/api/v1', oauthAuth, gasPredictionRouter); // Catch-all for gas prediction must be last
 
 app.get('/api/docs', (req, res) => {
   res.json({
