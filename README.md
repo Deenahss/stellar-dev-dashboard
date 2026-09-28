@@ -206,6 +206,17 @@ See [WASM_HASH_HISTORY_GUIDE.md](WASM_HASH_HISTORY_GUIDE.md) for detailed usage 
 
 ## Development
 
+### TypeScript strict ratchet
+
+This repository uses a per-directory strict-mode ratchet rather than a big-bang migration. The baseline strict check lives in [tsconfig.strict.json](tsconfig.strict.json), and the allow-list is intentionally narrow so contributors can move only approved directories into strict mode without introducing regressions.
+
+- Approved strict directories: `src/lib/stellar`, `src/design-system`, and `src/types`
+- The CI job `Strict TypeScript Ratchet` validates the include set and then runs `tsc --noEmit -p tsconfig.strict.json`
+- The strict allow-list may only grow: removing an approved directory is rejected by `scripts/check-strict-tsconfig.mjs`
+- To move another directory into strict mode, fix all `any` values and other strict failures in that directory, add the directory to the include list in [tsconfig.strict.json](tsconfig.strict.json), and update the CI validation if the baseline changes
+
+This migration is compatibility-safe because it leaves the default app-wide config relaxed while still enforcing strict typing on the hand-curated, lower-risk surface area. The strict set is treated as a controlled safety net rather than a broad project-wide policy change.
+
 ### Node.js support
 
 This project supports Node.js **22 through 26**. Node 22 is the minimum
