@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useEffect, useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { matchRoute, buildPath, getDocumentTitle, type TabComponent } from './routes';
+import { matchRoute, buildPath, getDocumentTitle, ROUTES_BY_ID, type TabComponent } from './routes';
 import { getRouteComponent } from './routeComponents';
 import NotFound from './NotFound';
 import Sidebar from '../components/layout/Sidebar';
@@ -12,6 +12,7 @@ import RealTimeNotificationCenter from '../components/notifications/RealTimeNoti
 import { useRealTimeNotifications } from '../hooks/useRealTimeNotifications';
 import { initCache } from '../lib/cacheInit';
 import ErrorBoundary from '../components/ErrorBoundary';
+import RouteErrorBoundary from '../components/routes/RouteErrorBoundary';
 import { useStore } from '../lib/store';
 import { useResponsive } from '../hooks/useResponsive';
 import { initializeErrorReporting, addBreadcrumb } from '../lib/errorReporting';
@@ -32,6 +33,7 @@ import ThemeToggle from '../components/layout/ThemeToggle';
 import OfflineBanner from '../components/layout/OfflineBanner';
 import PWAInstallBanner from '../components/PWAInstallBanner';
 import SWUpdatePrompt from '../components/SWUpdatePrompt';
+import WalletIdlePrompt from '../components/security/WalletIdlePrompt';
 import { useSwipeGesture } from '../hooks/useSwipeGesture';
 import DevToolbar from '../components/dashboard/DevToolbar';
 import DebugAssistantButton from '../components/debug/DebugAssistantButton';
@@ -45,6 +47,9 @@ import ExpertiseBadge from '../components/expertise/ExpertiseBadge';
 import PredictiveFeatureSuggestions from '../components/dashboard/PredictiveFeatureSuggestions';
 import TipButton from '../components/ai/TipButton';
 import { useWalletSessionListeners } from '../hooks/useWalletSessionListeners';
+import ShareViewButton from '../components/share/ShareViewButton';
+import SharedViewBanner from '../components/share/SharedViewBanner';
+import { useSharedView } from '../hooks/useSharedView';
 import {
   DEMO_MODE_LABEL,
   DEMO_MODE_BADGE,
@@ -56,8 +61,6 @@ import './DashboardLayout.css';
 interface SearchResult {
   type?: string;
 }
-
-const TransactionDetail = lazy(() => import('../components/dashboard/TransactionDetail'));
 
 function TabLoadingFallback() {
   return (
@@ -311,7 +314,7 @@ export default function DashboardLayout() {
   return (
     <ErrorBoundary onRetry={handleRetry} maxRetries={3}>
       <SkipLink />
-      <OfflineBanner />
+      <OfflineBanner routeId={routeMatch?.route.id ?? activeTab} />
       <PWAInstallBanner />
       <SWUpdatePrompt />
       <div className="dashboard-layout-root">
@@ -359,6 +362,11 @@ export default function DashboardLayout() {
           <div className="dashboard-price-section">
             <PriceTicker />
           </div>
+          <SharedViewBanner
+            view={sharedView}
+            onExit={sharedView.exitSharedView}
+            onSwitchNetwork={sharedView.switchToSnapshotNetwork}
+          />
           {isDemoMode && (
             <div
               data-testid="demo-mode-banner"
@@ -398,12 +406,22 @@ export default function DashboardLayout() {
               <NotFound />
             ) : txHash ? (
               <Suspense fallback={<TabLoadingFallback />}>
-                <TransactionDetail txHash={txHash} onClose={() => navigate('/transactions')} />
+                <div style={{ padding: '40px', textAlign: 'center' }}>
+                  <p>Transaction detail view not available. <a href="/transactions" onClick={(e) => { e.preventDefault(); navigate('/transactions'); }}>View all transactions</a></p>
+                </div>
               </Suspense>
             ) : ActiveComponent ? (
-              <Suspense fallback={<TabLoadingFallback />}>
-                <ActiveComponent />
-              </Suspense>
+              <RouteErrorBoundary
+                routeName={activeRoute?.title || activeTab}
+                routePath={location.pathname}
+                onRetry={handleRetry}
+                onNavigateHome={() => navigate('/overview')}
+                maxRetries={2}
+              >
+                <Suspense fallback={<TabLoadingFallback />}>
+                  <ActiveComponent />
+                </Suspense>
+              </RouteErrorBoundary>
             ) : (
               <NotFound />
             )}
