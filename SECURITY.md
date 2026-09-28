@@ -29,52 +29,30 @@ are recorded in a tamper-evident audit log. The log is append-only and each
 entry is chained to the previous entry via a cryptographic hash so that any
 modification, reordering, or deletion of historical records is detectable.
 
-### Exporting the audit log
+## Reporting a Vulnerability
+If you discover a security vulnerability within this project, please send an e-mail to security@stellar-dev-dashboard.org. All security vulnerabilities will be promptly addressed.
 
-Compliance and security reviewers can export the audit log from the compliance
-dashboard. The export is available in two formats:
+### 3. Pre-Sign Risk Review
+Signing is treated as a privileged action, because it usually is one. Before any
+transaction reaches a wallet, it is parsed and run through a declarative ruleset
+([`docs/api/riskRules.md`](docs/api/riskRules.md)) that describes every
+operation in plain language.
 
-- **JSON** — machine-readable, includes the full hash chain for verification.
-- **CSV** — human-readable summary for spreadsheet review.
-
-Each export includes the chain head hash so that reviewers can verify the
-exported records against the live log.
-
-### Verifying an export
-
-To verify that an exported log has not been tampered with, recompute the hash
-chain from the first record to the last and confirm that the final hash matches
-the exported chain head. A mismatch indicates that the log was altered after it
-was written and should be treated as a security incident.
-
-### Handling invalid input and unsupported environments
-
-- Requests for an unsupported export format are rejected with a clear error
-  rather than silently falling back to a default format.
-- Requests for a time range that is malformed or inverted (end before start)
-  are rejected with a validation error.
-- Audit export is only available in environments where the audit log is
-  enabled. In environments where it is disabled or unsupported, the export
-  endpoint returns an explicit "unsupported environment" error instead of an
-  empty or misleading result.
-- If the audit store is unavailable, the export fails closed: no partial or
-  unverified data is returned, and the failure is surfaced to the caller.
-
-### Compatibility and migration notes
-
-- The audit log format is versioned. Exports include a format version so that
-  consumers can detect and handle schema changes.
-- Existing deployments that predate the audit log will not have historical
-  entries; the log begins at the point the feature was enabled. No migration is
-  required, but reviewers should be aware that pre-enablement actions are not
-  covered.
-- Enabling the audit log does not change the behavior of privileged actions;
-  it only records them.
-
-## Security Best Practices for Contributors
-
-- Never commit secrets, tokens, or credentials.
-- Validate and sanitize all external input.
-- Fail closed on error paths for security-sensitive operations.
-- Add tests for the primary flow, at least one boundary case, and at least one
-  failure case when changing security-relevant code.
+- **Coverage:** all four signing surfaces — `<TransactionSigner>` (including
+  XDR pasted from outside the dashboard), `<SignatureCollector>`,
+  `<AnchorIntegration>` (SEP-10 challenges), and
+  `signAndSubmitTransaction()`.
+- **Gating:** irreversible operations — disabling the master key, changing
+  thresholds or signers, merging the account, removing or unlimiting a
+  trustline, spending a large share of the account, or calling an unapproved
+  contract — are escalated to `high` and require an explicit acknowledgement.
+  The signing call is unreachable until the user confirms.
+- **Fail open, state the caveat:** a failed simulation or an unavailable account
+  snapshot degrades the summary and says so on screen; it never silently
+  presents an unverified transaction as verified, and never blocks a user
+  because a node was down.
+- **Allowlist by default:** the approved-contract list ships empty, so any
+  contract invocation is flagged until the user opts in.
+- **Full-transaction review:** every operation is shown, including those that
+  matched no rule, so a dangerous operation cannot hide between unremarkable
+  ones.
