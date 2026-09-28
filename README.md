@@ -18,6 +18,22 @@ pnpm run check:package-manager
 - Unsupported: npm or yarn installs, and Node.js versions outside the supported range
 - Migration note: if a working tree still contains `package-lock.json`, remove it before installing or this repo will reject the environment as unsupported
 
+## Demo Mode (#875)
+
+New visitors land on the connect screen, so the first impression of the dashboard
+shows no value. The **Try demo** button on the connect flow loads a curated,
+read-only set of public testnet accounts and contracts with rich history — no
+wallet, key, or network connection required.
+
+- Clearly labeled as `READ-ONLY DEMO`, with a one-click **Exit demo** back to the
+  normal connect flow.
+- Fixture data is bundled at `src/fixtures/demo-fixtures.generated.json` and
+  validated by `src/lib/demoMode.ts`.
+- Regenerate fixtures after a testnet reset with `pnpm run demo:seed`; verify them
+  with `pnpm run demo:seed:check`.
+- Full maintainer and user guidance, including security and compatibility notes,
+  lives in [docs/DEMO_MODE.md](docs/DEMO_MODE.md).
+
 ## AI-Enhanced Transaction Fee Prediction (Feature #535)
 
 The fee prediction system uses machine learning to provide optimal transaction fee recommendations.
@@ -137,6 +153,57 @@ The dashboard supports Ledger signing in Chromium-based browsers through WebUSB/
 - The signing path uses the active Ledger derivation path returned from the device session and attaches the resulting signature to the full envelope before returning XDR.
 - Reject/recovery errors are surfaced in a user-friendly way instead of leaking raw Ledger transport details.
 
+## Smart Contract Interaction Improvements
+
+The dashboard provides auto-generated controls for smart contract interaction when reading the published on-chain spec.
+
+### Key Features
+
+1. **Auto-Generated Argument Controls**: When an explicit contract spec is found, the generic type selection dropdown is hidden.
+2. **Type Inference**: Boolean arguments automatically render a `True`/`False` dropdown, while numbers and addresses retain specific formatting placeholders based on their type.
+3. **Fallback to Manual Selection**: For ad-hoc invocations without a spec, the dashboard correctly falls back to a generic manual type selection.
+
+### Compatibility & Migration Notes
+
+- Compatible with existing `ContractInteraction` components. No migration of user settings is necessary.
+- Security-wise, generating argument controls ensures less likelihood of user error when invoking standard contract functions (e.g. incorrect mapping of manual types to required ABI types).
+
+## WASM Hash History & Authorization Tracking
+
+The dashboard now includes comprehensive visualization tools for tracking contract upgrades, WASM hashes, and authorization requirements.
+
+### Key Features
+
+1. **WASM Hash History**: Automatic tracking of all WASM hashes associated with contract upgrades with filtering, export, and transaction explorer links
+2. **Authorization Requirements Display**: Real-time visualization of authorization status with severity indicators and change history
+3. **Local Storage**: All upgrade data stored locally in browser IndexedDB for privacy and performance
+4. **Network Isolation**: Separate tracking per network (testnet, mainnet, public, custom) to prevent cross-network confusion
+5. **Error Handling**: Comprehensive validation and graceful degradation for unsupported environments
+
+### Integration Points
+
+- **Contracts Panel**: New "📜 WASM History" tab for viewing and managing upgrade history
+- **Contract History Panel**: Recent WASM hashes displayed when filtering by contract ID
+- **Authorization Panel**: Automatic display when contracts are selected with detailed security analysis
+
+### Security Considerations
+
+- **Authorization Severity**: Color-coded severity levels (safe, low, medium, high, critical) for quick security assessment
+- **Change Tracking**: Monitor authorization requirement changes across upgrades to detect security implications
+- **Critical Auth Types**: Admin and owner authorizations are prominently marked as critical severity
+- **Multi-signature Support**: Recognition and display of multisig requirements
+
+### Compatibility & Migration Notes
+
+- **Browser Requirements**: Requires IndexedDB support for local history storage; gracefully degrades to display-only mode if unavailable
+- **Storage Limits**: Large upgrade histories may require periodic cleanup; export functionality available for backup
+- **No Breaking Changes**: Existing contract interactions and history remain unaffected
+- **Data Privacy**: All WASM hash history stored locally; no external transmission of upgrade data
+
+### Documentation
+
+See [WASM_HASH_HISTORY_GUIDE.md](WASM_HASH_HISTORY_GUIDE.md) for detailed usage instructions, API reference, and troubleshooting information.
+
 ## Development
 
 ### Node.js support
@@ -186,6 +253,13 @@ The server-side API uses a narrow trust boundary for user-specific and operation
 - Route handlers validate input before processing and return `400 Bad Request` for malformed payloads instead of throwing uncaught exceptions.
 
 This keeps user-specific and operational endpoints behind explicit authentication and authorization checks while keeping the API compatible with the existing mock OAuth pattern used in development and test environments.
+
+## Feature Guides
+
+- **Comparative network health scorecards (#867)** — side-by-side Mainnet vs Testnet health scoring with standing caveats: [docs/features/network-health-scorecards.md](docs/features/network-health-scorecards.md), rendered in the Cross-Network panel.
+- **Scheduled report delivery via webhooks (#869)** — authenticated HMAC/bearer delivery of analytics summaries with retries: [docs/features/report-webhook-delivery.md](docs/features/report-webhook-delivery.md).
+- **Transaction Builder i18n (#878)** — complete locale coverage of builder strings across all nine languages: [docs/features/builder-i18n.md](docs/features/builder-i18n.md).
+- **Mutation testing gate for fee math (#895)** — Stryker score gate on stroop conversion and fee estimation: [docs/features/mutation-testing-gate.md](docs/features/mutation-testing-gate.md). Run locally with `pnpm run test:mutation:feemath`.
 
 ## Canary Deployment Health Probes
 

@@ -7,6 +7,9 @@ import { generateInsights, type AnalyticsSummary } from './analytics'
 import { accountRequests } from './requestCancellation'
 import { applyCustomThemeToDOM, removeCustomThemeFromDOM, saveThemeVarsToStorage, clearThemeVarsFromStorage, type ThemeDefinition } from '../styles/themeTypes'
 import { handleNetworkSwitch } from './cacheInit'
+import { normalizeLedgerSequence } from './ledgerPin'
+import { hydrateDemoState } from './demoMode'
+import { loadIdleTimeoutMinutes, saveIdleTimeoutMinutes } from './wallet/idleTimeout'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -281,6 +284,9 @@ export interface StoreState extends NetworkSlice, SessionSlice, AccountSlice, Ui
   setWalletConnected: (connected: boolean, type?: string | null, publicKey?: string | null) => void
   disconnectWallet: () => void
   revokeWalletSession: (reason?: string) => void
+  /** Minutes of inactivity before the wallet disconnect prompt; 0 = off (#837). */
+  walletIdleTimeoutMinutes: number
+  setWalletIdleTimeoutMinutes: (minutes: unknown) => void
 
   addNotification: (notification: Notification) => void
   removeNotification: (id: string) => void
@@ -298,6 +304,17 @@ export interface StoreState extends NetworkSlice, SessionSlice, AccountSlice, Ui
   // Ledger stats widget (Issue #267)
   addLedgerStatsEntry: (entry: LedgerStatsEntry) => void
   toggleLedgerStatsWidget: () => void
+
+  /**
+   * Pinned ledger sequence for shared views (#share-links).
+   *
+   * Deliberately NOT in PERSIST_KEYS: a pin is a property of a shared link and
+   * of the current session, not a durable preference. Persisting it would leave
+   * a stale pin silently applied to later unrelated work in the same browser.
+   * The URL is the source of truth, and `useSharedView` re-applies on load.
+   */
+  ledgerPin: number | null
+  setLedgerPin: (sequence: number | null) => void
 
   // Per-network data buckets for cross-network switching
   setPerNetworkData: (network: string, data: Partial<NetworkScopedData>) => void
