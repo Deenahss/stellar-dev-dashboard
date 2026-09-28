@@ -25,6 +25,8 @@ import { TourLauncher } from '../components/tutorial';
 import GlobalSearch from '../components/search/GlobalSearch';
 import UserPreferences from '../components/preferences/UserPreferences';
 import NetworkIndicator from '../components/layout/NetworkIndicator';
+import NetworkSafetyBadge from '../components/layout/NetworkSafetyBadge';
+import { useWriteGuard } from '../hooks/useWriteGuard';
 import MobileNavigation from '../components/layout/MobileNavigation';
 import KeyboardNavigation from '../components/accessibility/KeyboardNavigation';
 import SkipLink from '../components/accessibility/SkipLink';
@@ -130,69 +132,8 @@ export default function DashboardLayout() {
   const [conversationOpen, setConversationOpen] = useState<boolean>(false);
   const preferencesTriggerRef = React.useRef<HTMLButtonElement>(null);
 
-  // ── URL ↔ view synchronisation (driven by the route registry, #959) ────────
-  const location = useLocation();
-  const routeMatch = React.useMemo(() => matchRoute(location.pathname), [location.pathname]);
-  const activeRoute = routeMatch?.route ?? null;
-  const isConnectRoute = location.pathname === '/connect';
-  const lastSyncedPath = React.useRef<string | null>(null);
-
-  // URL → store: sync the active tab and any entity path param when the URL changes.
-  useEffect(() => {
-    if (!routeMatch) {
-      lastSyncedPath.current = location.pathname;
-      return;
-    }
-    if (lastSyncedPath.current === location.pathname) return;
-    lastSyncedPath.current = location.pathname;
-
-    if (routeMatch.route.id !== useStore.getState().activeTab) {
-      setActiveTab(routeMatch.route.id);
-    }
-
-    const param = routeMatch.route.param;
-    const raw = param ? routeMatch.params[param.name] : undefined;
-    if (param?.store && raw) {
-      const state = useStore.getState() as any;
-      if (param.store === 'connectedAddress' && raw !== state.connectedAddress) {
-        setConnectedAddress(raw);
-      } else if (param.store === 'contractId' && raw !== state.contractId) {
-        setContractId(raw);
-      } else if (param.store === 'selectedTxHash' && raw !== state.selectedTxHash) {
-        setSelectedTxHash(raw);
-      }
-    }
-  }, [routeMatch, location.pathname, setActiveTab, setConnectedAddress, setContractId, setSelectedTxHash]);
-
-  // Store → URL: direct `setActiveTab` calls elsewhere still update the address bar.
-  useEffect(() => {
-    if (!routeMatch) return;
-    const current = useStore.getState().activeTab;
-    if (routeMatch.route.id !== current) {
-      navigate(buildPath(current), { replace: true });
-    }
-  }, [activeTab, routeMatch, navigate]);
-
-  // Connection gating based on the resolved route rather than the raw pathname.
-  useEffect(() => {
-    const address = useStore.getState().connectedAddress;
-    const addressParam =
-      routeMatch?.route.param?.store === 'connectedAddress'
-        ? routeMatch.params[routeMatch.route.param.name]
-        : undefined;
-
-    if (!address && !isConnectRoute && !addressParam) {
-      navigate('/connect', { replace: true });
-    } else if (address && isConnectRoute) {
-      const target = routeMatch?.route.id ?? useStore.getState().activeTab;
-      navigate(buildPath(target), { replace: true });
-    }
-  }, [routeMatch, isConnectRoute, navigate, connectedAddress]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    document.title = getDocumentTitle(activeRoute);
-  }, [activeRoute]);
+  // #983 — mainnet write guard (shared across child tabs via context or prop-drilling)
+  const { isReadOnlyLocked, lockReadOnly, unlockReadOnly } = useWriteGuard();
 
   useRouteFocus(activeTab);
   useStorageQuotaAlerts();
@@ -333,8 +274,14 @@ export default function DashboardLayout() {
               <GlobalSearch onSelectResult={handleSearchResult} />
             </div>
             <ThemeToggle />
-            <div className="dashboard-toolbar__network">
-              <NetworkIndicator />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* #983 – NetworkSafetyBadge replaces NetworkIndicator; amber chrome on mainnet */}
+              <NetworkSafetyBadge
+                isReadOnlyLocked={isReadOnlyLocked}
+                onLockToggle={isReadOnlyLocked ? unlockReadOnly : lockReadOnly}
+              />
+              {/* Keep the compact dot indicator for quick reference in dense layouts */}
+              <NetworkIndicator compact />
             </div>
             <div className="dashboard-toolbar__expertise">
               <ExpertiseBadge

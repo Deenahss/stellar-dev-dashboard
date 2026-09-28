@@ -10,6 +10,9 @@ const PAGES = [
   { name: 'connect', path: '/' },
   { name: 'overview', path: '/overview' },
   { name: 'settings', path: '/settings' },
+  { name: 'account', path: '/account' },
+  { name: 'transactions', path: '/transactions' },
+  { name: 'contracts', path: '/contracts' },
 ];
 
 const IMPACT_LEVELS = new Set(['critical', 'serious', 'moderate']);
@@ -33,7 +36,7 @@ test.describe('Accessibility CI Gate', () => {
       await page.waitForFunction(() => !!(window as any).axe, { timeout: 30000 });
 
       const rules = await page.evaluate(() => {
-        return (window as any).axe.getRules(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        return (window as any).axe.getRules(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22a', 'wcag22aa'])
           .map((r: any) => r.ruleId)
           .filter((id: string) => id !== 'no-autoplay-audio' && id !== 'css-orientation-lock' && id !== 'color-contrast');
       }, null, { timeout: 30000 });

@@ -57,6 +57,7 @@ const sidebars = {
       items: [
         'guides/getting-started-guide',
         'guides/sending-payments',
+        'guides/sep-0007-payment-requests',
         'guides/working-with-assets',
         'guides/soroban-smart-contracts',
         'guides/dex-trading',
