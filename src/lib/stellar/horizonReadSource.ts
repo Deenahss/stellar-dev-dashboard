@@ -1,5 +1,5 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { getServer, NetworkName } from '../stellar';
+import { getServer, NetworkName } from './networks.js';
 import {
   StellarReadSource,
   GetLedgersParams,

@@ -1,5 +1,5 @@
 import * as StellarSdk from '@stellar/stellar-sdk';
-import { getSorobanServer, NetworkName, NETWORKS } from '../stellar';
+import { getSorobanServer, NetworkName, NETWORKS } from './networks.js';
 import {
   StellarReadSource,
   GetLedgersParams,
