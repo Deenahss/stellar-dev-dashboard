@@ -423,9 +423,9 @@ Common pitfalls:
 **Where this lives in the repo**
 
 - Implementation connectors: [src/lib/stellar.ts](../../src/lib/stellar.ts) (Horizon + network config)
-- Soroban helpers: [src/lib/contractInvoker.js](../../src/lib/contractInvoker.js)
-- Price feed: [src/lib/priceFeed.js](../../src/lib/priceFeed.js)
-- Streaming: [src/lib/streaming.js](../../src/lib/streaming.js)
+- Soroban helpers: [src/lib/contractInvoker.ts](../../src/lib/contractInvoker.ts)
+- Price feed: [src/lib/priceFeed.ts](../../src/lib/priceFeed.ts)
+- Streaming: [src/lib/streaming.ts](../../src/lib/streaming.ts)
 
 Replace the line numbers above with actual references if needed.
 
@@ -457,6 +457,8 @@ This directory documents the public JavaScript modules exposed by the dashboard.
 | [transactionBuilder.js](./transactionBuilder.md)     | Multi-operation transaction builder and simulator             |
 | [transactionTemplates.js](./transactionTemplates.md) | Pre-built transaction templates                               |
 | [import.js / export.js](./dataExport.md)             | Dashboard backup, export, and import utilities                |
+| [riskRules.js](./riskRules.md)                  | Declarative pre-sign risk ruleset with plain-language descriptions    |
+| [riskSummary.js](./riskSummary.md)              | Per-transaction pre-sign risk summary                                 |
 
 ## Quick Start
 
