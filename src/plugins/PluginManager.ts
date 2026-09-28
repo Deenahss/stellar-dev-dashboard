@@ -1,6 +1,11 @@
 import React from "react";
 import { useStore } from "../lib/store";
 import {
+  PLUGIN_API_VERSION,
+  getApiVersionCompatibility,
+  getDeprecationNoticesForVersion,
+} from "./pluginVersioning";
+import {
   loadInstalledPlugins,
   upsertInstalledPlugin,
   removeInstalledPlugin,
@@ -76,6 +81,7 @@ function normalizeManifest(plugin) {
     id: manifest.id,
     name: manifest.name,
     version: String(manifest.version || "1.0.0"),
+    apiVersion: String(manifest.apiVersion || PLUGIN_API_VERSION),
     description: String(manifest.description || ""),
     author: manifest.author || null,
     homepageUrl: manifest.homepageUrl || null,
@@ -183,10 +189,13 @@ function createRecord({
   error = null,
   runtimeLoaded = true,
 }) {
-  return {
+   return {
     id: manifest.id,
     name: manifest.name,
     version: manifest.version,
+    apiVersion: manifest.apiVersion || PLUGIN_API_VERSION,
+    apiVersionCompatibility: getApiVersionCompatibility(manifest.apiVersion),
+    deprecationNotices: getDeprecationNoticesForVersion(manifest.apiVersion),
     manifest,
     runtime,
     runtimeLoader,
@@ -463,6 +472,8 @@ export class PluginManager {
       throw new Error("Plugin manifest is invalid.");
     }
 
+    enforceApiVersionCompatibility(manifest);
+
     if (this.plugins.has(manifest.id)) {
       throw new Error(`Plugin ID conflict: "${manifest.id}" is already registered.`);
     }
@@ -498,6 +509,17 @@ export class PluginManager {
   canActivate(record) {
     if (!record.enabled) {
       return { ok: false, reason: "Plugin is disabled." };
+    }
+
+    if (
+      record.apiVersionCompatibility === "unsupported" ||
+      record.apiVersionCompatibility === "invalid"
+    ) {
+      return {
+        ok: false,
+        reason: `Plugin targets unsupported plugin API version "${record.apiVersion ||
+          "unspecified"}; this dashboard supports ${PLUGIN_API_VERSION}. Upgrade the dashboard or relax the plugin's apiVersion.`,
+      };
     }
 
     const missingDependencies = (record.manifest.dependencies?.plugins || []).filter(
@@ -614,6 +636,10 @@ export class PluginManager {
       error: record.error,
       initializedAt: record.initializedAt,
       version: record.version,
+      apiVersion: record.apiVersion,
+      apiVersionCompatibility: record.apiVersionCompatibility,
+      deprecationNotices: record.deprecationNotices || [],
+      deprecated: record.manifest.deprecated || null,
       latestVersion: record.latestVersion || record.version,
       updateAvailable: Boolean(record.updateAvailable),
       sourceType: record.sourceType,
@@ -723,6 +749,7 @@ export class PluginManager {
   }
 
   async installPlugin(manifest, { approvedPermissions } = {}) {
+    enforceApiVersionCompatibility(manifest);
     const normalizedManifest = normalizeManifest(manifest);
     if (!normalizedManifest) {
       throw new Error("Cannot install an invalid plugin manifest.");

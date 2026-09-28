@@ -5,6 +5,7 @@ import auditTrail from './auditTrail.js';
 import { getCircuitBreaker } from './errorHandling/CircuitBreaker';
 import { validateMemo } from './validation';
 import { requireAllowedEndpoint } from './endpointAllowlist';
+import { importBatchXdr, simulateBatchXdr, validateXdrForBroadcast, type BatchXdrImportResult, type BatchXdrImportOptions, type ValidationReportItem, type XdrImportItem } from './batchXdrImport'
 
 // ─── Cache setup ──────────────────────────────────────────────────────────────
 
@@ -30,6 +31,7 @@ function buildSimulationCacheKey(params: BuildTransactionParams) {
     memo: params.memo,
     baseFee: params.baseFee,
     timeBounds: params.timeBounds,
+    preconditions: params.preconditions,
     network: params.network,
   });
 }
@@ -163,6 +165,28 @@ export function getSimulationFeeOptions(
 
 export type NetworkName = 'mainnet' | 'testnet' | 'futurenet' | 'local' | 'custom';
 
+export type {
+  NetworkCapabilities,
+  StellarReadSource,
+  NormalizedLedger,
+  NormalizedTransaction,
+  NormalizedEvent,
+  NormalizedOffer,
+  GetLedgersParams,
+  GetLedgersResult,
+  GetTransactionsParams,
+  GetTransactionsResult,
+  GetEventsParams,
+  GetEventsResult,
+  GetOffersParams,
+  GetOffersResult,
+} from './stellar/types';
+export { UnsupportedCapabilityError, RetentionWindowExceededError } from './stellar/types';
+export { HorizonReadSource } from './stellar/horizonReadSource';
+export { RpcReadSource } from './stellar/rpcReadSource';
+export { RpcFirstReadSource } from './stellar/rpcFirstReadSource';
+export { getStellarReadSource, evaluateReadSourceCapabilities } from './stellar/index';
+
 export interface NetworkConfig {
   name: string;
   horizonUrl: string;
@@ -171,6 +195,7 @@ export interface NetworkConfig {
   faucetUrl?: string;
   customHeaders?: Record<string, string>;
   headers?: Record<string, string>;
+  capabilities?: import('./stellar/types').NetworkCapabilities;
 }
 
 export const NETWORKS: Record<NetworkName, NetworkConfig> = {
@@ -179,6 +204,14 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     horizonUrl: 'https://horizon.stellar.org',
     sorobanUrl: 'https://soroban-rpc.stellar.org',
     passphrase: StellarSdk.Networks.PUBLIC,
+    capabilities: {
+      ledgers: true,
+      transactions: true,
+      events: true,
+      accountOffers: true,
+      fullHistory: true,
+      defaultReadSource: 'rpc',
+    },
   },
   testnet: {
     name: 'Testnet',
@@ -186,6 +219,14 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     sorobanUrl: 'https://soroban-testnet.stellar.org',
     passphrase: StellarSdk.Networks.TESTNET,
     faucetUrl: 'https://friendbot.stellar.org',
+    capabilities: {
+      ledgers: true,
+      transactions: true,
+      events: true,
+      accountOffers: true,
+      fullHistory: true,
+      defaultReadSource: 'rpc',
+    },
   },
   futurenet: {
     name: 'Futurenet',
@@ -193,12 +234,28 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     sorobanUrl: 'https://soroban-futurenet.stellar.org',
     passphrase: StellarSdk.Networks.FUTURENET,
     faucetUrl: 'https://friendbot-futurenet.stellar.org',
+    capabilities: {
+      ledgers: true,
+      transactions: true,
+      events: true,
+      accountOffers: true,
+      fullHistory: true,
+      defaultReadSource: 'rpc',
+    },
   },
   local: {
     name: 'Local',
     horizonUrl: 'http://localhost:8000',
     sorobanUrl: 'http://localhost:8000/soroban/rpc',
     passphrase: 'Standalone Network ; February 2017',
+    capabilities: {
+      ledgers: true,
+      transactions: true,
+      events: true,
+      accountOffers: true,
+      fullHistory: true,
+      defaultReadSource: 'rpc',
+    },
   },
   custom: {
     name: 'Custom',
@@ -206,6 +263,14 @@ export const NETWORKS: Record<NetworkName, NetworkConfig> = {
     sorobanUrl: '',
     passphrase: '',
     headers: {},
+    capabilities: {
+      ledgers: true,
+      transactions: true,
+      events: true,
+      accountOffers: true,
+      fullHistory: true,
+      defaultReadSource: 'rpc',
+    },
   },
 };
 
@@ -405,7 +470,7 @@ export function getSorobanServer(network: NetworkName = 'testnet'): StellarSdk.S
   if (network === 'custom' && !config.sorobanUrl) {
     throw new Error('Custom Soroban RPC URL not configured');
   }
-  return new StellarSdk.SorobanRpc.Server(
+  return new StellarSdk.rpc.Server(
     config.sorobanUrl || NETWORKS.testnet.sorobanUrl!,
     getServerOptions(network)
   );
@@ -1028,13 +1093,13 @@ export async function fundTestnetAccount(publicKey: string): Promise<unknown> {
 export async function fetchContractInfo(
   contractId: string,
   network: NetworkName = 'testnet'
-): Promise<StellarSdk.SorobanRpc.Api.LedgerEntryResult> {
+): Promise<StellarSdk.rpc.Api.LedgerEntryResult> {
   const server = getSorobanServer(network);
   try {
     const instance = await server.getContractData(
       contractId,
       StellarSdk.xdr.ScVal.scvLedgerKeyContractInstance(),
-      StellarSdk.SorobanRpc.Durability.Persistent
+      StellarSdk.rpc.Durability.Persistent
     );
     return instance;
   } catch (e) {
@@ -1046,7 +1111,7 @@ export async function fetchContractData(
   contractId: string,
   key: StellarSdk.xdr.ScVal | string,
   network: NetworkName = 'testnet',
-  durability: StellarSdk.SorobanRpc.Durability = StellarSdk.SorobanRpc.Durability.Persistent
+  durability: StellarSdk.rpc.Durability = StellarSdk.SorobanRpc.Durability.Persistent
 ): Promise<any> {
   const server = getSorobanServer(network);
 
@@ -1097,7 +1162,7 @@ export interface SerializedContractEvent {
 export interface ContractSimulationResult {
   xdr: string;
   latestLedger: number;
-  cost?: StellarSdk.SorobanRpc.Api.Cost;
+  cost?: StellarSdk.rpc.Api.Cost;
   result: unknown;
   events: SerializedContractEvent[];
   footprint: {
@@ -1109,7 +1174,7 @@ export interface ContractSimulationResult {
 
 export interface ContractSubmitResult {
   hash: string;
-  status: StellarSdk.SorobanRpc.Api.SendTransactionStatus;
+  status: StellarSdk.rpc.Api.SendTransactionStatus;
   errorResult: string | null;
   diagnosticEvents: string[];
 }
@@ -1239,8 +1304,8 @@ export async function simulateContractCall(
   }
 
   const successfulSimulation = simulation as Exclude<
-    StellarSdk.SorobanRpc.Api.SimulateTransactionResponse,
-    StellarSdk.SorobanRpc.Api.SimulateTransactionErrorResponse
+    StellarSdk.rpc.Api.SimulateTransactionResponse,
+    StellarSdk.rpc.Api.SimulateTransactionErrorResponse
   >;
 
   const footprint = successfulSimulation.transactionData
@@ -1433,7 +1498,7 @@ export async function checkDestinationMemoRequirement(
  */
 export async function resolveFederatedAddress(
   federatedAddress: string,
-  _network: NetworkName = 'testnet'
+  network: NetworkName = 'testnet'
 ): Promise<{ accountId: string; memoId?: string; memoType?: string } | null> {
   try {
     // Parse the federated address (name*domain)
@@ -1982,7 +2047,7 @@ export interface BuildTransactionParams {
 export async function buildTransaction(
   params: BuildTransactionParams
 ): Promise<StellarSdk.Transaction | StellarSdk.FeeBumpTransaction> {
-  const { sourceAccount, operations, memo, baseFee, timeBounds, network } = params;
+  const { sourceAccount, operations, memo, baseFee, timeBounds, preconditions, network } = params;
 
   // ── Fee-bump shortcut ──────────────────────────────────────────────────────
   // A fee-bump must be the only operation and is built entirely from its own
@@ -3352,6 +3417,25 @@ export function getCacheStats() {
   return stellarCache.getStats();
 }
 
+export function formatInstructions(instructions: number): string {
+  if (instructions < 1000) return `${instructions}`;
+  if (instructions < 1000000) return `${(instructions / 1000).toFixed(2)}K`;
+  return `${(instructions / 1000000).toFixed(2)}M`;
+}
+
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+export function formatStroops(stroops: unknown): string {
+  const num = typeof stroops === 'number' ? stroops : parseInt(String(stroops), 10);
+  if (isNaN(num)) return '—';
+  const xlm = (num / 10000000).toFixed(7);
+  return `${xlm} XLM (${num.toLocaleString('en-US')} stroops)`;
+}
+
 export { StellarSdk };
 
 export default {
@@ -3407,6 +3491,12 @@ export default {
   calculateAccountReserves,
   clearCache,
   getCacheStats,
+  formatInstructions,
+  formatBytes,
+  formatStroops,
+  importBatchXdr,
+  simulateBatchXdr,
+  validateXdrForBroadcast,
   StellarSdk,
 };
 
