@@ -14,6 +14,7 @@ import {
 import { accountRequests, AccountLanes, isCancellation } from '../../lib/requestCancellation';
 import CopyableValue from './CopyableValue';
 import useAssetUsdEstimates, { formatEstimatedUsd } from '../../hooks/useAssetUsdEstimates';
+import { useResponsive } from '../../hooks/useResponsive';
 import AddressLabelBadge from '../addressLabels/AddressLabelBadge';
 import AssetTrustStatus from '../assets/AssetTrustStatus';
 import { announceToScreenReader } from '../../utils/accessibility';
@@ -365,6 +366,42 @@ export default function Account() {
     );
   }
 
+  const showMobileLayout = forceViewMode === 'mobile' || (forceViewMode === 'auto' && isMobile);
+
+  if (showMobileLayout && connectedAddress) {
+    return (
+      <div className="animate-in">
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+          <button
+            onClick={() => setForceViewMode(forceViewMode === 'desktop' ? 'auto' : 'desktop')}
+            style={{
+              fontSize: '11px',
+              padding: '2px 8px',
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              borderRadius: '4px',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            Switch to Desktop View
+          </button>
+        </div>
+        <MobileAccountOverview
+          accountData={accountData}
+          connectedAddress={connectedAddress}
+          network={network}
+          networkStats={networkStats}
+          offers={offers}
+          offersLoading={offersLoading}
+          offersError={offersError}
+          createdAt={createdAt}
+          createdAtLoading={createdAtLoading}
+        />
+      </div>
+    );
+  }
+
   const xlm = accountData.balances?.find((b: { asset_type: string }) => b.asset_type === 'native');
   const otherAssets =
     accountData.balances?.filter((b: { asset_type: string }) => b.asset_type !== 'native') || [];
@@ -376,12 +413,6 @@ export default function Account() {
     : createdAt
       ? format(new Date(createdAt), 'MMM d, yyyy')
       : 'Unknown';
-  const { getEstimate } = useAssetUsdEstimates({
-    balances: accountData?.balances || [],
-    connectedAddress,
-    network,
-    refreshKey: accountData,
-  });
   const xlmEstimate = xlm ? getEstimate(xlm) : null;
 
 

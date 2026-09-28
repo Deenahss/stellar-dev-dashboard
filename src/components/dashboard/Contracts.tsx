@@ -3,6 +3,8 @@ import { useStore } from '../../lib/store'
 import ContractDeployerView from '../deployment/ContractDeployer'
 import ContractRecommendations from './ContractRecommendations'
 import ContractEventDisplay from './ContractEventDisplay'
+import WasmHashHistory from './WasmHashHistory'
+import AuthorizationRequirements from './AuthorizationRequirements'
 import {
   fetchContractInfo,
   invokeContract,
@@ -173,6 +175,7 @@ function ResultBlock({ label, data }: { label: string; data: any }) {
 
 export default function Contracts() {
   const [mode, setMode] = useState('inspect')
+  const [subMode, setSubMode] = useState('interact')
   const {
     network,
     contractId,
