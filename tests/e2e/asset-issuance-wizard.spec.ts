@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import * as StellarSdk from '@stellar/stellar-sdk';
 
 test.describe('testnet asset issuance wizard', () => {
   test('creates accounts with Friendbot fixtures and resumes without persisting signing keys', async ({ page }) => {
@@ -44,5 +45,45 @@ test.describe('testnet asset issuance wizard', () => {
     const savedDraft = await page.evaluate(() => localStorage.getItem('stellar:asset-issuance:testnet:v1'));
     expect(savedDraft).toContain('FAIL');
     expect(savedDraft).not.toMatch(/S[A-Z2-7]{55}/);
+  });
+
+  test('requires explicit acknowledgement before signing the issuer lock', async ({ page }) => {
+    const issuer = StellarSdk.Keypair.random();
+    const distributor = StellarSdk.Keypair.random();
+    const draft = {
+      config: { code: 'DEMO', name: 'Demo Credit', homeDomain: 'example.org', supply: '1000', authRequired: false, authRevocable: false, clawbackEnabled: false },
+      issuerPublicKey: issuer.publicKey(),
+      distributorPublicKey: distributor.publicKey(),
+      issuerFunded: true,
+      distributorFunded: true,
+      completed: { configure: true, trustline: true, issue: true },
+      transactionHashes: {},
+    };
+    await page.addInitScript((savedDraft) => localStorage.setItem('stellar:asset-issuance:testnet:v1', JSON.stringify(savedDraft)), draft);
+    await page.route('https://horizon-testnet.stellar.org/accounts/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          account_id: issuer.publicKey(),
+          sequence: '10',
+          subentry_count: 0,
+          thresholds: { low_threshold: 0, med_threshold: 0, high_threshold: 0 },
+          flags: {},
+          balances: [{ asset_type: 'native', balance: '10' }],
+          signers: [],
+          data: {},
+        }),
+      });
+    });
+
+    await page.goto('/assetIssuance');
+    await page.getByRole('button', { name: 'Preview transaction' }).click();
+    const acknowledgement = page.getByLabel('I have verified the asset setup and understand this issuer cannot be operated again.');
+    const submit = page.getByRole('button', { name: 'Sign and submit' });
+    await expect(acknowledgement).not.toBeChecked();
+    await expect(submit).toBeDisabled();
+    await acknowledgement.check();
+    await expect(submit).toBeEnabled();
   });
 });

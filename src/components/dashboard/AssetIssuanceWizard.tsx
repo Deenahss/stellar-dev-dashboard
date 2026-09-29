@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import * as StellarSdk from '@stellar/stellar-sdk';
 import { AlertTriangle, Check, Copy, Download, Eye, EyeOff, FileText, LockKeyhole, ShieldCheck, Trash2 } from 'lucide-react';
-import { buildAssetIssuanceOperations, buildAssetTomlSnippet, createAssetIssuanceDraft, EMPTY_ASSET_ISSUANCE_CONFIG, validateAssetIssuanceConfig, type AssetIssuanceDraft, type AssetIssuanceStage } from '../../lib/assetIssuanceWizard';
+import { buildAssetIssuanceOperations, buildAssetTomlSnippet, createAssetIssuanceDraft, EMPTY_ASSET_ISSUANCE_CONFIG, validateAssetIssuanceConfig, type AssetIssuanceConfig, type AssetIssuanceDraft, type AssetIssuanceStage } from '../../lib/assetIssuanceWizard';
 import { validateSep1Fields } from '../../lib/stellarTomlInspector';
 import { fundTestnetAccount, getServer, NETWORKS } from '../../lib/stellar';
 
@@ -42,6 +42,7 @@ export default function AssetIssuanceWizard() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [lockAcknowledged, setLockAcknowledged] = useState(false);
 
   useEffect(() => {
     const { config, issuerPublicKey, distributorPublicKey, issuerFunded, distributorFunded, completed, transactionHashes } = draft;
@@ -109,6 +110,7 @@ export default function AssetIssuanceWizard() {
         .setTimeout(180)
         .build();
       setPreview({ stage, xdr: transaction.toXDR() });
+      setLockAcknowledged(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not build the transaction preview.');
     } finally { setBusy(''); }
@@ -120,6 +122,7 @@ export default function AssetIssuanceWizard() {
     const sourceSecret = stage === 'trustline' ? secrets.distributor : secrets.issuer;
     setBusy(`submit-${stage}`); setError(''); setMessage('');
     try {
+      if (stage === 'lock' && !lockAcknowledged) throw new Error('Acknowledge the irreversible issuer lock before signing.');
       if (!sourceSecret) throw new Error(`Enter the ${stage === 'trustline' ? 'distributor' : 'issuer'} secret key to sign this transaction.`);
       const keypair = StellarSdk.Keypair.fromSecret(sourceSecret);
       const expectedPublicKey = stage === 'trustline' ? draft.distributorPublicKey : draft.issuerPublicKey;
@@ -186,9 +189,9 @@ export default function AssetIssuanceWizard() {
           <Field label="Initial supply"><input aria-label="Initial supply" inputMode="decimal" style={fieldStyle} value={draft.config.supply} onChange={(event) => updateConfig({ supply: event.target.value })} disabled={Boolean(draft.completed.configure)} /></Field>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 8 }}>
-          <label title="Holders need issuer authorization before the asset can be received." style={{ fontSize: 12 }}><input type="checkbox" checked={draft.config.authRequired} onChange={(event) => updateConfig({ authRequired: event.target.checked })} disabled={Boolean(draft.completed.configure)} /> Auth required: holders start unauthorized; an extra approval step is required.</label>
-          <label title="The issuer can freeze or revoke individual trustlines." style={{ fontSize: 12 }}><input type="checkbox" checked={draft.config.authRevocable} onChange={(event) => updateConfig({ authRevocable: event.target.checked })} disabled={Boolean(draft.completed.configure) || draft.config.clawbackEnabled} /> Revocable: issuer can freeze or revoke holder authorization.</label>
-          <label title="Enables the issuer to reclaim issued tokens from holders." style={{ fontSize: 12 }}><input type="checkbox" checked={draft.config.clawbackEnabled} onChange={(event) => updateConfig({ clawbackEnabled: event.target.checked, authRevocable: event.target.checked || draft.config.authRevocable })} disabled={Boolean(draft.completed.configure)} /> Clawback: issuer can reclaim tokens; this is a material holder risk.</label>
+          <label title="Holders need issuer authorization before the asset can be received." style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}><span><input type="checkbox" checked={draft.config.authRequired} onChange={(event) => updateConfig({ authRequired: event.target.checked })} disabled={Boolean(draft.completed.configure)} /> Auth required</span><span style={{ color: 'var(--text-muted)' }}>New trustlines cannot receive this asset until the issuer approves them. The wizard adds an approval transaction.</span></label>
+          <label title="The issuer can freeze or revoke individual trustlines." style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}><span><input type="checkbox" checked={draft.config.authRevocable} onChange={(event) => updateConfig({ authRevocable: event.target.checked })} disabled={Boolean(draft.completed.configure) || draft.config.clawbackEnabled} /> Revocable</span><span style={{ color: 'var(--text-muted)' }}>The issuer can freeze or revoke holder authorization later. Clawback requires this control.</span></label>
+          <label title="Enables the issuer to reclaim issued tokens from holders." style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}><span><input type="checkbox" checked={draft.config.clawbackEnabled} onChange={(event) => updateConfig({ clawbackEnabled: event.target.checked, authRevocable: event.target.checked || draft.config.authRevocable })} disabled={Boolean(draft.completed.configure)} /> Clawback</span><span style={{ color: 'var(--text-muted)' }}>Allows the issuer to reclaim tokens from any holder, a material holder risk. Automatically enables revocable authorization.</span></label>
         </div>
         {configErrors.length > 0 && <div role="alert" style={{ color: 'var(--warning, #eab308)', fontSize: 12 }}>{configErrors.join(' ')}</div>}
       </section>
@@ -215,7 +218,7 @@ export default function AssetIssuanceWizard() {
             {stage.id === 'lock' && <div style={{ display: 'flex', gap: 7, color: 'var(--danger, #ef4444)', fontSize: 12 }}><AlertTriangle size={16} />Irreversible: zeroing the issuer master weight removes the only signing authority. Do not continue unless you have reviewed every flag and do not need future issuer actions.</div>}
           </article>;
         })}
-        {preview && <div style={{ ...panelStyle, background: 'var(--bg-canvas)' }}><strong style={{ fontSize: 13 }}>Transaction preview: {stages.find((stage) => stage.id === preview.stage)?.title}</strong><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 180, overflow: 'auto', margin: 0, fontSize: 10 }}>{preview.xdr}</pre><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="button" style={actionStyle} onClick={() => copyValue(preview.xdr, 'Transaction XDR')}><Copy size={14} /> Copy XDR</button><button type="button" style={actionStyle} onClick={submitPreview} disabled={Boolean(busy)}>{busy === `submit-${preview.stage}` ? 'Submitting…' : 'Sign and submit'}</button><button type="button" style={actionStyle} onClick={() => setPreview(null)}>Cancel</button></div></div>}
+        {preview && <div style={{ ...panelStyle, background: 'var(--bg-canvas)' }}><strong style={{ fontSize: 13 }}>Transaction preview: {stages.find((stage) => stage.id === preview.stage)?.title}</strong><pre style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 180, overflow: 'auto', margin: 0, fontSize: 10 }}>{preview.xdr}</pre>{preview.stage === 'lock' && <div style={{ display: 'flex', flexDirection: 'column', gap: 8, border: '1px solid var(--danger, #ef4444)', padding: 10, color: 'var(--danger, #ef4444)', fontSize: 12 }}><strong>Irreversible: this generated issuer will lose its signing authority permanently. No recovery is possible.</strong><label><input type="checkbox" checked={lockAcknowledged} onChange={(event) => setLockAcknowledged(event.target.checked)} /> I have verified the asset setup and understand this issuer cannot be operated again.</label></div>}<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="button" style={actionStyle} onClick={() => copyValue(preview.xdr, 'Transaction XDR')}><Copy size={14} /> Copy XDR</button><button type="button" style={actionStyle} onClick={submitPreview} disabled={Boolean(busy) || (preview.stage === 'lock' && !lockAcknowledged)}>{busy === `submit-${preview.stage}` ? 'Submitting…' : 'Sign and submit'}</button><button type="button" style={actionStyle} onClick={() => { setPreview(null); setLockAcknowledged(false); }}>Cancel</button></div></div>}
       </section>
 
       <section style={panelStyle}>

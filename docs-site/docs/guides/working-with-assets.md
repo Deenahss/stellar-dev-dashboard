@@ -26,7 +26,7 @@ Secret keys are generated and signed in the browser and are never written to the
 
 The wizard checks asset code, home domain, supply precision, and the generated `[[CURRENCIES]]` entry with the SEP-1 field validator. The hosted `stellar.toml` must still be published over HTTPS at `/.well-known/stellar.toml` and inspected with the dashboard's SEP-1 Inspector; local validation cannot verify hosting, CORS, or the live issuer `home_domain`.
 
-`auth_required` makes new trustlines unauthorized until the issuer approves them; the flow adds a separate `allowTrust` transaction before issuance. `auth_revocable` allows the issuer to freeze/revoke authorization. Clawback enables token recovery and requires revocability, so it presents a material holder risk. Locking sets the issuer master weight to zero and is irreversible; only use it after all issuer actions are complete. The wizard is testnet-only and does not migrate or configure existing mainnet assets.
+`auth_required` makes new trustlines unauthorized until the issuer approves them; the flow adds a separate `allowTrust` transaction before issuance. `auth_revocable` allows the issuer to freeze/revoke authorization. Clawback enables token recovery and requires revocability, so it presents a material holder risk. Locking sets the generated issuer's master weight to zero and is irreversible; the wizard requires an explicit acknowledgement before signing. Only use it after all issuer actions are complete. The wizard is testnet-only and does not migrate or configure existing mainnet assets.
 
 ```js
 import { Asset } from '@stellar/stellar-sdk';
