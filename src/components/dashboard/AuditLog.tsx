@@ -410,6 +410,7 @@ export default function AuditLog() {
 
       <FilterBar onFilterChange={(f: FilterState) => setFilters(f)} />
 
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '14px' }}>
       <EnhancedTable
         columns={AUDIT_LOG_COLUMNS}
         visibleColumns={auditPresets.visibleColumns}
