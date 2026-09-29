@@ -234,6 +234,14 @@ export const ROUTES: AppRoute[] = [
     loader: defaultLoader(() => import('../components/dashboard/Builder')),
   },
   {
+    id: 'assetIssuance',
+    path: '/assetIssuance',
+    title: 'Asset Issuance',
+    icon: '◆',
+    group: 'build',
+    loader: defaultLoader(() => import('../components/dashboard/AssetIssuanceWizard')),
+  },
+  {
     id: 'txSimulator',
     path: '/txSimulator',
     title: 'Simulator',
