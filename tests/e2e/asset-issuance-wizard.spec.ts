@@ -2,6 +2,62 @@ import { test, expect } from '@playwright/test';
 import * as StellarSdk from '@stellar/stellar-sdk';
 
 test.describe('testnet asset issuance wizard', () => {
+  test('previews and submits the complete authorization-required issuance flow with fixtures', async ({ page }) => {
+    const submissions: string[] = [];
+    await page.route('https://friendbot.stellar.org/**', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ successful: true }) });
+    });
+    await page.route('https://horizon-testnet.stellar.org/accounts/**', async (route) => {
+      const accountId = new URL(route.request().url()).pathname.split('/').pop();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          account_id: accountId,
+          sequence: String(10 + submissions.length),
+          subentry_count: 0,
+          thresholds: { low_threshold: 0, med_threshold: 0, high_threshold: 0 },
+          flags: {},
+          balances: [{ asset_type: 'native', balance: '10' }],
+          signers: [],
+          data: {},
+        }),
+      });
+    });
+    await page.route('https://horizon-testnet.stellar.org/transactions', async (route) => {
+      submissions.push(route.request().postData() ?? '');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ hash: `fixture-${submissions.length}`, ledger: 123, successful: true }),
+      });
+    });
+
+    await page.goto('/assetIssuance');
+    await page.getByLabel('Asset code').fill('DEMO');
+    await page.getByLabel('Asset name').fill('Demo Credit');
+    await page.getByLabel('Home domain').fill('example.org');
+    await page.getByRole('checkbox').nth(0).check();
+    await page.getByRole('checkbox').nth(1).check();
+    await page.getByRole('checkbox').nth(2).check();
+    await page.getByRole('button', { name: 'Create and fund accounts' }).click();
+    await expect(page.getByText('Both testnet accounts are funded.')).toBeVisible();
+    await expect(page.getByText('No currency-entry errors.')).toBeVisible();
+
+    for (const title of ['Issuer policy and domain', 'Distributor trustline', 'Authorize holder', 'Issue initial supply']) {
+      const stage = page.locator('article').filter({ hasText: title });
+      await stage.getByRole('button', { name: 'Preview transaction' }).click();
+      await expect(page.getByText(`Transaction preview: ${title}`)).toBeVisible();
+      await page.getByRole('button', { name: 'Sign and submit' }).click();
+      await expect(page.getByRole('status')).toContainText('Transaction confirmed:');
+      await expect(stage).toContainText('Confirmed:');
+    }
+
+    expect(submissions).toHaveLength(4);
+    expect(await page.getByText('[[CURRENCIES]]').count()).toBeGreaterThan(0);
+    await expect(page.locator('article').filter({ hasText: 'Issue initial supply' })).toContainText('Confirmed: fixture-4');
+  });
+
   test('creates accounts with Friendbot fixtures and resumes without persisting signing keys', async ({ page }) => {
     const fundedAddresses: string[] = [];
     await page.route('https://friendbot.stellar.org/**', async (route) => {
