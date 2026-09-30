@@ -7,6 +7,9 @@ import {
   updateCustomNetworkConfig,
   switchToCustomProfile,
   loadCustomNetworkProfiles,
+  validateHorizonEndpoint,
+  validateSorobanEndpoint,
+  type EndpointValidationResult
 } from '../../lib/stellar';
 import { getActiveProfile } from '../../lib/userPreferences';
 import { preloadTab } from '../../hooks/usePreload';
@@ -70,17 +73,31 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [customHeaderName, setCustomHeaderName] = useState<string>('');
   const [customHeaderValue, setCustomHeaderValue] = useState<string>('');
+  const [draftHorizon, setDraftHorizon] = useState<string>('');
+  const [draftSoroban, setDraftSoroban] = useState<string>('');
+  const [horizonValidation, setHorizonValidation] = useState<EndpointValidationResult | null>(null);
+  const [sorobanValidation, setSorobanValidation] = useState<EndpointValidationResult | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
   const asideRef = useRef<HTMLElement>(null);
 
   useSidebarArrowNav(asideRef, !isMobile || isMobileMenuOpen);
 
   useEffect(() => {
     if (network === 'custom') {
+      const currentHorizon = (NETWORKS as any).custom?.horizonUrl || '';
+      const currentSoroban = (NETWORKS as any).custom?.sorobanUrl || '';
+      setDraftHorizon(currentHorizon);
+      setDraftSoroban(currentSoroban);
+      setHorizonValidation(null);
+      setSorobanValidation(null);
+
       loadCustomNetworkProfiles().then((profiles: CustomProfile[]) => {
         setCustomProfiles(profiles);
         getActiveProfile().then((profile: CustomProfile | null) => {
           if (profile) {
             setActiveProfileId(profile.id);
+            setDraftHorizon(profile.horizonUrl || '');
+            setDraftSoroban(profile.sorobanUrl || '');
             updateCustomNetworkConfig({
               horizonUrl: profile.horizonUrl,
               sorobanUrl: profile.sorobanUrl,
@@ -91,6 +108,20 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
       });
     }
   }, [network]);
+
+  const handleValidateAndApply = async () => {
+    setIsValidating(true);
+    const hResult = await validateHorizonEndpoint(draftHorizon);
+    const sResult = draftSoroban ? await validateSorobanEndpoint(draftSoroban) : null;
+    
+    setHorizonValidation(hResult);
+    setSorobanValidation(sResult);
+    
+    if (hResult.isValid && (!draftSoroban || sResult?.isValid)) {
+      updateCustomNetworkConfig({ horizonUrl: draftHorizon, sorobanUrl: draftSoroban });
+    }
+    setIsValidating(false);
+  };
 
   const handleNavClick = (tabId: string) => {
     navigate(`/${tabId}`);
@@ -302,27 +333,60 @@ export default function Sidebar({ isMobile = false }: SidebarProps) {
               <label htmlFor="horizon-url" className="sr-only">
                 Horizon URL
               </label>
-              <input
-                id="horizon-url"
-                placeholder="Horizon URL"
-                key={`horizon-${activeProfileId}`}
-                defaultValue={(NETWORKS as any).custom?.horizonUrl}
-                style={customInputStyle}
-                aria-label="Custom Horizon URL"
-                onChange={(e) => updateCustomNetworkConfig({ horizonUrl: e.target.value.trim() })}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="horizon-url"
+                  placeholder="Horizon URL"
+                  key={`horizon-${activeProfileId}`}
+                  value={draftHorizon}
+                  style={customInputStyle}
+                  aria-label="Custom Horizon URL"
+                  onChange={(e) => setDraftHorizon(e.target.value.trim())}
+                />
+                {horizonValidation && (
+                  <div style={{ fontSize: '10px', color: horizonValidation.isValid ? 'var(--green)' : 'var(--red)', marginTop: '4px' }}>
+                    {horizonValidation.isValid ? `Healthy (${horizonValidation.latencyMs}ms)` : `Error: ${horizonValidation.error}`}
+                  </div>
+                )}
+              </div>
               <label htmlFor="soroban-url" className="sr-only">
                 Soroban RPC URL
               </label>
-              <input
-                id="soroban-url"
-                placeholder="Soroban RPC URL"
-                key={`soroban-${activeProfileId}`}
-                defaultValue={(NETWORKS as any).custom?.sorobanUrl}
-                style={customInputStyle}
-                aria-label="Custom Soroban RPC URL"
-                onChange={(e) => updateCustomNetworkConfig({ sorobanUrl: e.target.value.trim() })}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  id="soroban-url"
+                  placeholder="Soroban RPC URL"
+                  key={`soroban-${activeProfileId}`}
+                  value={draftSoroban}
+                  style={customInputStyle}
+                  aria-label="Custom Soroban RPC URL"
+                  onChange={(e) => setDraftSoroban(e.target.value.trim())}
+                />
+                {sorobanValidation && (
+                  <div style={{ fontSize: '10px', color: sorobanValidation.isValid ? 'var(--green)' : 'var(--red)', marginTop: '4px' }}>
+                    {sorobanValidation.isValid ? `Healthy (${sorobanValidation.latencyMs}ms)` : `Error: ${sorobanValidation.error}`}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleValidateAndApply}
+                disabled={isValidating || !draftHorizon}
+                style={{
+                  background: 'var(--cyan)',
+                  color: '#000',
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  cursor: isValidating || !draftHorizon ? 'not-allowed' : 'pointer',
+                  opacity: isValidating || !draftHorizon ? 0.6 : 1,
+                  marginTop: '4px'
+                }}
+              >
+                {isValidating ? 'Validating...' : 'Validate & Activate'}
+              </button>
               <label htmlFor="network-passphrase" className="sr-only">
                 Network Passphrase
               </label>
