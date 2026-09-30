@@ -4,6 +4,12 @@ closes #550
 
 A real-time developer dashboard for the Stellar network with advanced features including AI-enhanced transaction fee prediction.
 
+## Roadmap and contributing
+
+- **[Roadmap](docs-site/docs/roadmap.md)**: milestones (v0.2 *Solid foundation*, v0.3 *Protocol-current*, v1.0 *Production ready*), their exit criteria, and how issues are assigned to them. The [GitHub Project board](https://github.com/Nanle-code/stellar-dev-dashboard/projects) groups open issues by theme, milestone and status.
+- **[Starter issues guide](docs/community/issue-labels.md)**: difficulty labels and what makes a `good first issue`.
+- **[Roadmap triage guide](docs/community/roadmap-triage.md)**: for maintainers. Covers sorting new issues into milestones and keeping the board current.
+
 ## Package manager policy
 
 This repository standardizes on pnpm for deterministic dependency resolution. Use the repo lockfile and do not rely on npm-generated `package-lock.json` files.
