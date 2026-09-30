@@ -1,5 +1,3 @@
-closes #550
-
 # Stellar Dev Dashboard
 
 A real-time developer dashboard for the Stellar network with advanced features including AI-enhanced transaction fee prediction.
@@ -285,4 +283,5 @@ The API service includes automated canary deployment health probes and auto-abor
 ### SEP-38 Integration
 - **Quotes**: Added support for SEP-38 Quotes API. Now discovers ANCHOR_QUOTE_SERVER and can retrieve /info, /prices, /price and request authenticated /quote.
 - **Security**: Authentication leverages SEP-10 tokens for quotes. Be aware that tokens can expire, and quotes have an expiration window handled gracefully with a countdown timer.
+...
 ...
